@@ -1,11 +1,18 @@
-import customtkinter as ctk
-from PIL import Image
+# Standard library imports
 import os
 import subprocess
 import sys
-import mysql.connector
-from tkinter import messagebox
 from datetime import datetime
+from tkinter import messagebox
+
+# Third-party imports
+import customtkinter as ctk
+import mysql.connector
+from PIL import Image
+from tkcalendar import DateEntry
+
+# Local application imports
+from models.password_utils import hash_password
 
 app = ctk.CTk()
 app.geometry("900x550")
@@ -148,9 +155,30 @@ contact_entry = ctk.CTkEntry(right_section, width=145, height=30, corner_radius=
 contact_entry.place(x=15, y=120)
 
 ctk.CTkLabel(right_section, text="Birthday", font=("Arial", 11, "bold"), text_color="black").place(x=175, y=100)
-bday_entry = ctk.CTkEntry(right_section, width=145, height=30, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black", placeholder_text="YYYY-MM-DD")
-bday_entry.place(x=175, y=120)
 
+bday_frame = ctk.CTkFrame(
+    right_section,
+    width=145,
+    height=30,
+    fg_color=WHITE,
+    corner_radius=8,
+    border_width=1,
+    border_color=BORDER_GRAY,
+)
+bday_frame.place(x=175, y=120)
+
+bday_entry = DateEntry(
+    bday_frame,
+    background="#2563eb",
+    foreground="white",
+    borderwidth=0,              # Removes the native ttk border
+    date_pattern="yyyy-mm-dd",
+    state="readonly",
+    font=("Arial", 11)
+)
+# Increase the x/y offset and reduce width/height slightly 
+# so the sharp corners sit inside the frame's rounded edges
+bday_entry.place(x=3, y=3, width=138, height=24)
 ctk.CTkLabel(right_section, text="Gender", font=("Arial", 11, "bold"), text_color="black").place(x=335, y=100)
 gender_combo = ctk.CTkComboBox(right_section, width=145, height=30, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black", button_color=BORDER_GRAY, button_hover_color="gray", values=["Male", "Female", "Other", "Prefer not to say"])
 gender_combo.place(x=335, y=120)
@@ -159,13 +187,9 @@ ctk.CTkLabel(right_section, text="Student No.", font=("Arial", 11, "bold"), text
 student_no_entry = ctk.CTkEntry(right_section, width=145, height=30, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black")
 student_no_entry.place(x=15, y=175)
 
-# --- Dynamic Dropdown Logic ---
 def update_courses(choice):
-    # Fetch courses based on the selected department
     courses = department_data.get(choice, [])
-    # Update the course combobox values
     course_combo.configure(values=courses)
-    # Automatically set the first course in the list if available, or clear it
     if courses:
         course_combo.set(courses[0])
     else:
@@ -176,7 +200,6 @@ dept_combo = ctk.CTkComboBox(right_section, width=145, height=30, corner_radius=
 dept_combo.place(x=175, y=175)
 
 ctk.CTkLabel(right_section, text="Course", font=("Arial", 11, "bold"), text_color="black").place(x=335, y=155)
-# Initialize course_combo empty; it will populate when a department is chosen
 course_combo = ctk.CTkComboBox(right_section, width=145, height=30, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black", button_color=BORDER_GRAY, button_hover_color="gray", values=[])
 course_combo.place(x=335, y=175)
 
@@ -190,12 +213,12 @@ address_textbox.place(x=15, y=230)
 # ==========================================
 def open_login():
     app.destroy()
-    subprocess.Popen([sys.executable, "login.py"])
+    subprocess.Popen([sys.executable, "main.py"])
 
 ctk.CTkButton(card_frame, text="Back to Login", width=120, height=35, fg_color=CARD_GRAY, text_color=TEXT_BLUE, border_color=TEXT_BLUE, border_width=1, hover_color="#eff6ff", corner_radius=8, font=("Arial", 12, "bold"), command=open_login).place(x=545, y=430)
 
 def register_user():
-    email = email_entry.get()
+    email = email_entry.get().strip().lower()
     password = password_entry.get()
     fname = fname_entry.get()
     mname = mname_entry.get()
@@ -203,7 +226,7 @@ def register_user():
     contact = contact_entry.get()
     bday = bday_entry.get()
     gender = gender_combo.get()
-    student_no = student_no_entry.get()
+    student_no = student_no_entry.get().strip().upper()
     dept = dept_combo.get()
     course = course_combo.get()
     address = address_textbox.get("1.0", "end-1c")
@@ -221,26 +244,36 @@ def register_user():
         )
         cursor = conn.cursor()
 
-        # --- Check for Duplicate Email ---
-        cursor.execute("SELECT user_id FROM user_account WHERE gmail = %s", (email,))
+        # Compare normalized values so case and surrounding spaces cannot bypass
+        # the duplicate checks.
+        cursor.execute(
+            "SELECT user_id FROM user_account WHERE LOWER(TRIM(gmail)) = %s",
+            (email,),
+        )
         if cursor.fetchone():
             messagebox.showerror("Registration Failed", "This email address is already registered.")
             cursor.close()
             conn.close()
             return
 
-        # --- Check for Duplicate Student Number ---
-        cursor.execute("SELECT personal_id FROM personal_info WHERE student_id = %s", (student_no,))
+        cursor.execute(
+            "SELECT personal_id FROM personal_info "
+            "WHERE UPPER(TRIM(student_id)) = %s",
+            (student_no,),
+        )
         if cursor.fetchone():
             messagebox.showerror("Registration Failed", "This Student No. is already registered.")
             cursor.close()
             conn.close()
             return
 
-        # --- Proceed with Registration ---
         creation_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        hashed_password = hash_password(password)
+        
         user_sql = "INSERT INTO user_account (gmail, password_hash, role, creationdate) VALUES (%s, %s, %s, %s)"
-        cursor.execute(user_sql, (email, password, "Student", creation_date))
+        
+        cursor.execute(user_sql, (email, hashed_password, "Student", creation_date))
         
         new_user_id = cursor.lastrowid
         

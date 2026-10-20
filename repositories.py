@@ -7,23 +7,23 @@ from models.inventory import InventoryItem, ItemRequest, Transaction
 
 class BaseRepository(ABC):
     def __init__(self):
-        self._db = DatabaseManager.get_instance()  # #_db: DatabaseManager (protected)[cite: 6]
+        self._db = DatabaseManager.get_instance() 
 
     @abstractmethod
     def add(self, entity: Any) -> bool:
-        pass                                       # +add(entity)[cite: 6]
+        pass                                  
 
     @abstractmethod
     def delete(self, _id: int) -> bool:
-        pass                                       # +delete(id)[cite: 6]
+        pass                                     
 
     @abstractmethod
     def update(self, entity: Any) -> bool:
-        pass                                       # +update(entity)[cite: 6]
+        pass                                      
 
     @abstractmethod
     def get_all(self) -> List[Any]:
-        pass                                       # +get_all()[cite: 6]
+        pass                                      
 
 
 class UserRepository(BaseRepository):
@@ -40,13 +40,13 @@ class UserRepository(BaseRepository):
         pass
 
     def addUser(self):
-        pass                                       # +addUser()[cite: 6]
+        pass                                     
         
     def updateUser(self):
-        pass                                       # +updateUser()[cite: 6]
+        pass                                      
         
     def deleteUser(self):
-        pass                                       # +deleteUser()[cite: 6]
+        pass                                      
 
 
 class InventoryRepository(BaseRepository):
@@ -63,13 +63,13 @@ class InventoryRepository(BaseRepository):
         pass
 
     def addItem(self):
-        pass                                       # +addItem()[cite: 6]
+        pass                                       
         
     def updateItem(self):
-        pass                                       # +updateItem()[cite: 6]
+        pass                                     
         
     def deleteItem(self):
-        pass                                       # +deleteItem()[cite: 6]
+        pass                                      
 
 
 class RequestRepository(BaseRepository):
@@ -86,13 +86,13 @@ class RequestRepository(BaseRepository):
         pass
 
     def addRequest(self):
-        pass                                       # +addRequest()[cite: 6]
+        pass                                      
         
     def updateRequest(self):
-        pass                                       # +updateRequest()[cite: 6]
+        pass                                       
         
     def deleteRequest(self):
-        pass                                       # +deleteRequest()[cite: 6]
+        pass                                     
 
 
 class TransactionRepository(BaseRepository):
@@ -109,7 +109,7 @@ class TransactionRepository(BaseRepository):
         pass
 
     def addTransaction(self):
-        pass                                       # +addTransaction()[cite: 6]
+        pass                                      
         
     def archiveTransaction(self):
-        pass                                       # +archiveTransaction()[cite: 6]
+        pass                                      

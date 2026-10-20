@@ -1,13 +1,14 @@
-import mysql.connector
-from tkinter import messagebox
-import customtkinter as ctk
-from PIL import Image
 import os
 import subprocess
 import sys
-import json
+from tkinter import messagebox
+
+import customtkinter as ctk
+import mysql.connector
+from PIL import Image
 
 from models.password_utils import verify_password
+from models.users import Session
 
 app = ctk.CTk()
 app.geometry("900x550")
@@ -76,24 +77,27 @@ def authenticate_user():
         user = cursor.fetchone()
         
         if user:
-            if user['password_hash'] == password:
-                session_data = {
-                    "user_id": user['user_id'],
-                    "gmail": user['gmail'],
-                    "role": user['role']
-                }
-                
-                with open("session.json", "w") as session_file:
-                    json.dump(session_data, session_file)
+            if verify_password(password, user['password_hash']):
+                Session.save(user['user_id'], user['gmail'], user['role'])
                 
                 messagebox.showinfo("Login Success", f"Welcome! Logged in as: {user['role']}")
                 
+                dashboard_name = (
+                    "admin_dashboard.py"
+                    if user['role'].lower() == "admin"
+                    else "student_dashboard.py"
+                )
+                dashboard_path = os.path.join(os.path.dirname(__file__), dashboard_name)
+                if not os.path.isfile(dashboard_path):
+                    Session.clear()
+                    messagebox.showerror(
+                        "Dashboard Unavailable",
+                        f"The dashboard for the {user['role']} role is not available yet.",
+                    )
+                    return
 
                 app.destroy()
-                if user['role'].lower() == "Admin":
-                    subprocess.Popen([sys.executable, "admin_dashboard.py"])
-                else:
-                    subprocess.Popen([sys.executable, "student_dashboard.py"])
+                subprocess.Popen([sys.executable, dashboard_path], cwd=os.path.dirname(__file__))
             else:
                 messagebox.showerror("Login Failed", "Incorrect password.")
         else:
@@ -117,8 +121,8 @@ ctk.CTkButton(card_frame, text="Login", width=290, height=40, fg_color=TEXT_BLUE
 ctk.CTkFrame(card_frame, width=290, height=2, fg_color="#e5e7eb").place(x=25, y=355)
 
 def open_register():
-    app.destroy() # Close login window
-    subprocess.Popen([sys.executable, "register.py"]) # Open register window
+    app.destroy() 
+    subprocess.Popen([sys.executable, "register.py"]) 
 
 ctk.CTkButton(card_frame, text="Register", width=290, height=40, fg_color=WHITE, text_color=TEXT_BLUE, border_color=TEXT_BLUE, border_width=2, hover_color="#eff6ff", corner_radius=8, font=("Arial", 14, "bold"), command=open_register).place(x=25, y=375)
 
