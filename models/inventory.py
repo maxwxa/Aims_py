@@ -3,21 +3,25 @@ from datetime import datetime, date
 from typing import List, Dict, Any
 
 class Record(ABC):
-    def __init__(self, _id: int, _date_added: datetime):
-        self._id = _id                         
-        self._date_added = _date_added       
+        def __init__(self, _id: int, _date_added: datetime):
+            self._id = _id                         
+            self._date_added = _date_added       
 
-    @abstractmethod
-    def validate(self) -> bool:
-        pass                                   
+        @abstractmethod
+        def validate(self) -> bool:
+            pass                                   
 
-    @abstractmethod
-    def to_dict(self) -> Dict[str, Any]:
-        pass                                  
-
+        @abstractmethod
+        def to_dict(self) -> Dict[str, Any]:
+            pass                                  
 
 class InventoryItem(Record):
-    def __init__(self, item_id: int, category_id: int, item_name: str, item_code: str, description: str, stock: int, serial_no: str, expiration_date: datetime, updated_date: datetime, added_date: datetime):
+    def __init__(
+        self, item_id: int, category_id: int, item_name: str, item_code: str,
+        description: str, stock: int, serial_no: str, expiration_date: datetime,
+        updated_date: datetime, added_date: datetime, unit: str = "",
+        image_path: str = "", category_name: str = "", requires_return: bool = False,
+    ):
         super().__init__(item_id, added_date)
         self.__item_id = item_id               
         self.__category_id = category_id       
@@ -29,77 +33,163 @@ class InventoryItem(Record):
         self.__expiration_date = expiration_date 
         self.__updated_date = updated_date     
         self.__added_date = added_date         
+        self.__unit = unit
+        self.__image_path = image_path
+        self.__category_name = category_name
+        self.__requires_return = requires_return
+
+    @property
+    def item_name(self) -> str:
+        return self.__item_name
+
+    @property
+    def item_id(self) -> int:
+        return self.__item_id
+
+    @property
+    def category_id(self) -> int:
+        return self.__category_id
+
+    @property
+    def category_name(self) -> str:
+        return self.__category_name
+
+    @property
+    def item_code(self) -> str:
+        return self.__item_code
+
+    @property
+    def description(self) -> str:
+        return self.__description
+
+    @property
+    def stock(self) -> int:
+        return self.__stock
+
+    @property
+    def serial_no(self) -> str:
+        return self.__serial_no
+
+    @property
+    def expiration_date(self):
+        return self.__expiration_date
+
+    @property
+    def updated_date(self):
+        return self.__updated_date
+
+    @property
+    def added_date(self):
+        return self.__added_date
+
+    @property
+    def unit(self) -> str:
+        return self.__unit
+
+    @property
+    def image_path(self) -> str:
+        return self.__image_path
+
+    @property
+    def requires_return(self) -> bool:
+        return self.__requires_return
 
     def update_stock(self, qty: int):
         self.__stock += qty                    
 
     def validate(self) -> bool:
-        return True                            
+        if not self.__item_name.strip() or not self.__item_code.strip():
+            return False
+        return self.__stock >= 0 and self.__stock <= 500
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"item_id": self.__item_id, "item_name": self.__item_name} 
+        return {
+            "item_id": self.__item_id, "category_id": self.__category_id,
+            "item_name": self.__item_name, "item_code": self.__item_code,
+            "description": self.__description, "stock": self.__stock,
+            "serial_no": self.__serial_no, "expiration_date": self.__expiration_date,
+            "updated_date": self.__updated_date, "added_date": self.__added_date,
+            "unit": self.__unit, "image_path": self.__image_path,
+        }
 
-
-class Category: # Spelled 'Catogory' in UML[cite: 5]
+class Category:
     def __init__(self, category_id: int, category_name: str, category_desc: str, requires_return: bool):
-        self.__category_id = category_id           
-        self.__category_name = category_name         
-        self.__category_desc = category_desc         
-        self.__requires_return = requires_return   
+        self.__category_id = category_id
+        self.__category_name = category_name
+        self.__category_desc = category_desc
+        self.__requires_return = requires_return
+
     def validate(self) -> bool:
-        return True                                 
+        return bool(self.__category_name.strip())
+
+    @property
+    def category_id(self) -> int:
+        return self.__category_id
+
+    @property
+    def category_name(self) -> str:
+        return self.__category_name
+
+    @property
+    def category_desc(self) -> str:
+        return self.__category_desc
+
+    @property
+    def requires_return(self) -> bool:
+        return self.__requires_return
 
 
 class ItemRequest(Record):
     def __init__(self, request_id: int, user_id: int, item_id: int, processed_by: int, request_status: str, quantity: int, request_date: datetime, due_date: datetime):
         super().__init__(request_id, request_date)
-        self.__request_id = request_id               
-        self.__user_id = user_id                   
-        self.__item_id = item_id                  
-        self.__processed_by = processed_by         
-        self.__request_status = request_status     
-        self.__quantity = quantity                   
-        self.__request_date = request_date          
-        self.__due_date = due_date                  
+        self.__request_id = request_id
+        self.__user_id = user_id
+        self.__item_id = item_id
+        self.__processed_by = processed_by
+        self.__request_status = request_status
+        self.__quantity = quantity
+        self.__request_date = request_date
+        self.__due_date = due_date
 
     def validate(self) -> bool:
-        return True                                 
+        return True
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"request_id": self.__request_id}     
+        return {"request_id": self.__request_id}
 
     def update_status(self):
-        pass                                     
+        pass
 
 
 class Transaction(Record):
     def __init__(self, transaction_id: int, request_id: int, transaction_type: str, quantity: int, condition_status: str, condition_notes: str, handled_by: int, transaction_date: datetime):
         super().__init__(transaction_id, transaction_date)
-        self.__transaction_id = transaction_id      
-        self.__request_id = request_id            
-        self.__transaction_type = transaction_type  
-        self.__quantity = quantity                
-        self.__condition_status = condition_status  
-        self.__condition_notes = condition_notes     
-        self.__handled_by = handled_by               
-        self.__transaction_date = transaction_date  
+        self.__transaction_id = transaction_id
+        self.__request_id = request_id
+        self.__transaction_type = transaction_type
+        self.__quantity = quantity
+        self.__condition_status = condition_status
+        self.__condition_notes = condition_notes
+        self.__handled_by = handled_by
+        self.__transaction_date = transaction_date
 
     def validate(self) -> bool:
-        return True                                 
+        return True
+
     def to_dict(self) -> Dict[str, Any]:
-        return {"transaction_id": self.__transaction_id} 
+        return {"transaction_id": self.__transaction_id}
 
 
 class TransactionsArchive:
     def __init__(self, arc_transaction_id: int, orig_transaction_id: int, request_id: int, transaction_type: str, quantity: int, condition_status: str, condition_notes: str, handled_by: int, transaction_date: datetime, archived_date: datetime, archive_reason: str):
         self.__arc_transaction_id = arc_transaction_id
         self.__orig_transaction_id = orig_transaction_id
-        self.__request_id = request_id               
-        self.__transaction_type = transaction_type  
-        self.__quantity = quantity                  
-        self.__condition_status = condition_status  
-        self.__condition_notes = condition_notes    
-        self.__handled_by = handled_by              
-        self.__transaction_date = transaction_date  
-        self.__archived_date = archived_date        
-        self.__archive_reason = archive_reason      
+        self.__request_id = request_id
+        self.__transaction_type = transaction_type
+        self.__quantity = quantity
+        self.__condition_status = condition_status
+        self.__condition_notes = condition_notes
+        self.__handled_by = handled_by
+        self.__transaction_date = transaction_date
+        self.__archived_date = archived_date
+        self.__archive_reason = archive_reason

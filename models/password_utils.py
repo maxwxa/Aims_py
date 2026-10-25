@@ -5,7 +5,6 @@ import hmac
 import secrets
 from typing import List
 
-
 def hash_password(password: str) -> str:
     salt = secrets.token_bytes(16)
     password_hash = hashlib.pbkdf2_hmac(

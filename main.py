@@ -43,6 +43,7 @@ except Exception as e:
 ctk.CTkLabel(left_frame, text="A.I.M.S", font=("Arial", 36, "bold"), text_color=WHITE).pack(pady=(0, 5))
 ctk.CTkLabel(left_frame, text="Academic Inventory\nManagement System", font=("Arial", 22, "bold"), text_color=WHITE, justify="center").pack()
 
+
 card_frame = ctk.CTkFrame(right_frame, width=340, height=440, fg_color=WHITE, corner_radius=15, border_width=1, border_color="#e5e7eb")
 card_frame.place(relx=0.5, rely=0.5, anchor="center")
 

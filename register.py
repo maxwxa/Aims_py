@@ -1,17 +1,14 @@
-# Standard library imports
 import os
 import subprocess
 import sys
 from datetime import datetime
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 
-# Third-party imports
 import customtkinter as ctk
 import mysql.connector
 from PIL import Image
 from tkcalendar import DateEntry
 
-# Local application imports
 from models.password_utils import hash_password
 
 app = ctk.CTk()
@@ -167,18 +164,24 @@ bday_frame = ctk.CTkFrame(
 )
 bday_frame.place(x=175, y=120)
 
+date_entry_style = ttk.Style(bday_frame)
+date_entry_style.configure(
+    "Birthday.TEntry",
+    padding=(6, 1),
+    font=("Arial", 11),
+)
+
 bday_entry = DateEntry(
     bday_frame,
-    background="#2563eb",
-    foreground="white",
-    borderwidth=0,              # Removes the native ttk border
+    background=WHITE,
+    foreground="black",
+    borderwidth=0,
     date_pattern="yyyy-mm-dd",
     state="readonly",
-    font=("Arial", 11)
+    font=("Arial", 11),
+    style="Birthday.TEntry",
 )
-# Increase the x/y offset and reduce width/height slightly 
-# so the sharp corners sit inside the frame's rounded edges
-bday_entry.place(x=3, y=3, width=138, height=24)
+bday_entry.pack(fill="both", expand=True, padx=2, pady=1)
 ctk.CTkLabel(right_section, text="Gender", font=("Arial", 11, "bold"), text_color="black").place(x=335, y=100)
 gender_combo = ctk.CTkComboBox(right_section, width=145, height=30, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black", button_color=BORDER_GRAY, button_hover_color="gray", values=["Male", "Female", "Other", "Prefer not to say"])
 gender_combo.place(x=335, y=120)
@@ -207,10 +210,6 @@ ctk.CTkLabel(right_section, text="Address :", font=("Arial", 11, "bold"), text_c
 address_textbox = ctk.CTkTextbox(right_section, width=465, height=90, corner_radius=8, border_width=1, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black")
 address_textbox.place(x=15, y=230)
 
-
-# ==========================================
-# BUTTONS AND LOGIC
-# ==========================================
 def open_login():
     app.destroy()
     subprocess.Popen([sys.executable, "main.py"])
@@ -244,8 +243,7 @@ def register_user():
         )
         cursor = conn.cursor()
 
-        # Compare normalized values so case and surrounding spaces cannot bypass
-        # the duplicate checks.
+    
         cursor.execute(
             "SELECT user_id FROM user_account WHERE LOWER(TRIM(gmail)) = %s",
             (email,),

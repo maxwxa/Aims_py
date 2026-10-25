@@ -1,3 +1,5 @@
+import mysql.connector
+
 class DatabaseManager:
     __instance = None                  
 
@@ -12,7 +14,14 @@ class DatabaseManager:
         return DatabaseManager()        
 
     def get_connection(self):
-        return self.__connection      
+        if self.__connection is None or not self.__connection.is_connected():
+            self.__connection = mysql.connector.connect(
+                host="localhost",
+                user="root",
+                password="",
+                database="aims_db",
+            )
+        return self.__connection
 
     def close(self):
         if self.__connection:
