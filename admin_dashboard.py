@@ -56,9 +56,7 @@ PURPLE = "#9333ea"
 main_bg = ctk.CTkFrame(app, fg_color=BG_BLUE, corner_radius=0)
 main_bg.pack(fill="both", expand=True)
 
-# ==========================================
-# HEADER
-# ==========================================
+
 header_frame = ctk.CTkFrame(main_bg, height=70, fg_color=DARK_BLUE, corner_radius=0)
 header_frame.pack(fill="x", side="top")
 
@@ -80,9 +78,7 @@ def logout():
 logout_btn = ctk.CTkButton(header_frame, text="Log out", width=100, height=35, fg_color=RED, hover_color="#dc2626", corner_radius=8, font=("Arial", 14, "bold"), command=logout)
 logout_btn.pack(side="right", padx=20, pady=17)
 
-# ==========================================
-# NAVIGATION BAR
-# ==========================================
+
 nav_frame = ctk.CTkFrame(main_bg, height=60, fg_color=WHITE, corner_radius=20)
 nav_frame.pack(fill="x", padx=20, pady=15)
 nav_frame.grid_columnconfigure(0, weight=1)
@@ -108,9 +104,7 @@ for i, tab in enumerate(tabs):
     btn.grid(row=0, column=i, padx=4, sticky="ew")
     nav_buttons[tab] = btn
 
-# ==========================================
-# ANALYTICS
-# ==========================================
+
 def create_analytics_tab(parent_frame):
     repository = AnalyticsRepository()
     frame = ctk.CTkFrame(parent_frame, fg_color=BG_BLUE, corner_radius=0)

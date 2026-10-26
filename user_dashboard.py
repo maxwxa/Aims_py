@@ -14,9 +14,7 @@ from repositories import (
     UserRepository,
 )
 
-# ==========================================
-# COLOR CONSTANTS (matching admin_dashboard.py)
-# ==========================================
+
 DARK_BLUE = "#1c3b7a"
 BG_BLUE = "#eef2ff"
 WHITE = "#ffffff"
@@ -31,9 +29,6 @@ GREEN = "#84cc16"
 BLUE = "#1d4ed8"
 PURPLE = "#9333ea"
 
-# ==========================================
-# APPLICATION SETUP
-# ==========================================
 app = ctk.CTk()
 app.geometry("1000x650")
 app.title("Academic Inventory Management System - User Dashboard")
@@ -57,9 +52,7 @@ if user_role not in {"user", "student"}:
     subprocess.Popen([sys.executable, os.path.join(os.path.dirname(__file__), "main.py")])
     sys.exit()
 
-# ==========================================
-# DATABASE LOADING FUNCTIONS
-# ==========================================
+
 def load_my_requests():
     """Load user's item requests from the database with inventory details."""
     try:
@@ -110,9 +103,6 @@ def load_user_info():
     }
 
 
-# ==========================================
-# MAIN DASHBOARD CLASS
-# ==========================================
 class UserDashboard:
     def __init__(self):
         self.user_info = load_user_info()
