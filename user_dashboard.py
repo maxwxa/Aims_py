@@ -36,7 +36,7 @@ PURPLE = "#9333ea"
 # ==========================================
 app = ctk.CTk()
 app.geometry("1000x650")
-app.title("User Dashboard")
+app.title("Academic Inventory Management System - User Dashboard")
 app.resizable(False, False)
 ctk.set_appearance_mode("light")
 

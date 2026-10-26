@@ -22,7 +22,7 @@ def destroy_login_window() -> None:
 
 
 app.geometry("900x550")
-app.title("login.py")
+app.title("Academic Inventory Management System - Login")
 app.resizable(False, False)
 ctk.set_appearance_mode("light")
 

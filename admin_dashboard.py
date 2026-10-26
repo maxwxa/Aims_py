@@ -22,7 +22,7 @@ from models.account_validation import validate_new_account, validate_password
 
 app = ctk.CTk()
 app.geometry("1000x650")
-app.title("(Analytics) admin_dashboard.py")
+app.title("Academic Inventory Management System - Admin Dashboard")
 app.resizable(False, False)
 ctk.set_appearance_mode("light")
 
@@ -1693,7 +1693,14 @@ class AccountEditor:
             left_form, "Password" if account is None else "Password (optional)",
             "", left_row, masked=True,
         )
-        left_row += 1
+        self.show_password = ctk.CTkCheckBox(
+            left_form, text="Show Password", text_color=TEXT_BLUE,
+            command=self.toggle_password_visibility,
+        )
+        self.show_password.grid(
+            row=left_row * 2 + 2, column=0, sticky="w", padx=4, pady=(0, 6)
+        )
+        left_row += 2
         self.role = self._combo(
             left_form, "Role", ["Admin", "Student"],
             details.get("role", "Student"),
@@ -1814,10 +1821,14 @@ class AccountEditor:
         if self.course.get() not in courses:
             self.course.set(courses[0] if courses else "")
 
+    def toggle_password_visibility(self):
+        show = "" if self.show_password.get() else "*"
+        self.password.configure(show=show)
+
     def save(self):
         if not messagebox.askyesno(
-            "Confirm Changes",
-            "Are you sure you want to save these changes?",
+            "Confirm Account Creation",
+            "Are you sure you want to create this account?",
             parent=self.modal,
         ):
             return
@@ -1926,6 +1937,12 @@ def create_accounts_tab(parent_frame):
     search = ctk.CTkEntry(toolbar, width=160, height=30, fg_color=WHITE,
                           text_color="black", corner_radius=6, placeholder_text="Search")
     search.pack(side="left", padx=5)
+    refresh_button = ctk.CTkButton(
+        toolbar, text="Refresh", width=80, height=30,
+        fg_color=WHITE, text_color="#1c3b7a", hover_color="#e5e7eb",
+        corner_radius=6, command=lambda: refresh(),
+    )
+    refresh_button.pack(side="left", padx=5)
     header_frame = ctk.CTkFrame(frame, fg_color="#dbeafe", corner_radius=8)
     header_frame.pack(fill="x", padx=20, pady=(20, 0))
     table = ctk.CTkScrollableFrame(frame, fg_color=WHITE, corner_radius=8)
@@ -2044,8 +2061,12 @@ def create_accounts_tab(parent_frame):
     def move(action):
         account = selected()
         if account and messagebox.askyesno("Confirm Account Deletion", "Permanently delete this account?", parent=app):
-            action(account.get("account_archive_id"))
-            refresh()
+            try:
+                if not action(account.get("account_archive_id")):
+                    raise ValueError("The archived account could not be found.")
+                refresh()
+            except (ValueError, mysql.connector.Error) as error:
+                messagebox.showerror("Delete Account", str(error), parent=app)
 
     def update_actions():
         for button in current + [restore, delete]:

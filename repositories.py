@@ -149,6 +149,16 @@ class UserRepository(BaseRepository):
             )
             if cursor.fetchone():
                 raise ValueError("This email address is already registered.")
+            student_id = str(personal_data.get("student_id", "")).strip().upper()
+            cursor.execute(
+                """SELECT personal_id
+                   FROM personal_info
+                   WHERE UPPER(TRIM(student_id))=%s
+                   LIMIT 1""",
+                (student_id,),
+            )
+            if cursor.fetchone():
+                raise ValueError("This Student No. is already registered.")
             cursor.execute(
                 """INSERT INTO user_account
                    (gmail, password_hash, role, creationdate, status)
@@ -168,7 +178,7 @@ class UserRepository(BaseRepository):
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     account_id,
-                    personal_data.get("student_id"),
+                    student_id,
                     personal_data.get("first_name"),
                     personal_data.get("middle_name"),
                     personal_data.get("last_name"),
@@ -368,15 +378,54 @@ class UserRepository(BaseRepository):
     def delete_archived(self, arc_user_id: int) -> bool:
         conn = self._db.get_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            "DELETE FROM account_archive WHERE arc_user_id=%s", (arc_user_id,)
-        )
-        conn.commit()
-        deleted = cursor.rowcount > 0
-        cursor.close()
-        if deleted:
-            _log_action("DELETE", "account_archive", arc_user_id)
-        return deleted
+        try:
+            cursor.execute(
+                """SELECT original_user_id
+                   FROM account_archive
+                   WHERE arc_user_id=%s
+                   FOR UPDATE""",
+                (arc_user_id,),
+            )
+            archived_account = cursor.fetchone()
+            if archived_account is None:
+                conn.rollback()
+                return False
+
+            original_user_id = archived_account[0]
+            cursor.execute(
+                "DELETE FROM account_archive WHERE arc_user_id=%s",
+                (arc_user_id,),
+            )
+            cursor.execute(
+                "DELETE FROM personal_info WHERE user_id=%s",
+                (original_user_id,),
+            )
+            cursor.execute(
+                "SELECT COUNT(*) FROM personal_info WHERE user_id=%s",
+                (original_user_id,),
+            )
+            if cursor.fetchone()[0] != 0:
+                conn.rollback()
+                raise ValueError(
+                    "The account personal information could not be deleted."
+                )
+
+            cursor.execute(
+                "DELETE FROM user_account WHERE user_id=%s",
+                (original_user_id,),
+            )
+            if cursor.rowcount != 1:
+                conn.rollback()
+                return False
+
+            conn.commit()
+            _log_action("DELETE", "account_archive/user_account", arc_user_id)
+            return True
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
 
     def add(self, entity: UserAccount) -> bool:
         pass
