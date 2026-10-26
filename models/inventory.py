@@ -154,6 +154,18 @@ class ItemRequest(Record):
     def validate(self) -> bool:
         return True
 
+    @property
+    def request_id(self) -> int:
+        return self.__request_id
+
+    @property
+    def quantity(self) -> int:
+        return self.__quantity
+
+    @property
+    def request_status(self) -> str:
+        return self.__request_status
+
     def to_dict(self) -> Dict[str, Any]:
         return {"request_id": self.__request_id}
 

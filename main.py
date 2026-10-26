@@ -1,7 +1,7 @@
 import os
 import subprocess
 import sys
-from tkinter import messagebox
+from tkinter import TclError, messagebox
 
 import customtkinter as ctk
 import mysql.connector
@@ -11,6 +11,16 @@ from models.password_utils import verify_password
 from models.users import Session
 
 app = ctk.CTk()
+
+
+def destroy_login_window() -> None:
+    try:
+        if app.winfo_exists():
+            app.destroy()
+    except TclError:
+        pass
+
+
 app.geometry("900x550")
 app.title("login.py")
 app.resizable(False, False)
@@ -86,7 +96,7 @@ def authenticate_user():
                 dashboard_name = (
                     "admin_dashboard.py"
                     if user['role'].lower() == "admin"
-                    else "student_dashboard.py"
+                    else "user_dashboard.py"
                 )
                 dashboard_path = os.path.join(os.path.dirname(__file__), dashboard_name)
                 if not os.path.isfile(dashboard_path):
@@ -97,8 +107,12 @@ def authenticate_user():
                     )
                     return
 
-                app.destroy()
-                subprocess.Popen([sys.executable, dashboard_path], cwd=os.path.dirname(__file__))
+                subprocess.Popen(
+                    [sys.executable, dashboard_path],
+                    cwd=os.path.dirname(__file__),
+                )
+                destroy_login_window()
+                sys.exit()
             else:
                 messagebox.showerror("Login Failed", "Incorrect password.")
         else:
@@ -122,9 +136,10 @@ ctk.CTkButton(card_frame, text="Login", width=290, height=40, fg_color=TEXT_BLUE
 ctk.CTkFrame(card_frame, width=290, height=2, fg_color="#e5e7eb").place(x=25, y=355)
 
 def open_register():
-    app.destroy() 
+    destroy_login_window()
     subprocess.Popen([sys.executable, "register.py"]) 
 
 ctk.CTkButton(card_frame, text="Register", width=290, height=40, fg_color=WHITE, text_color=TEXT_BLUE, border_color=TEXT_BLUE, border_width=2, hover_color="#eff6ff", corner_radius=8, font=("Arial", 14, "bold"), command=open_register).place(x=25, y=375)
 
 app.mainloop()
+destroy_login_window()

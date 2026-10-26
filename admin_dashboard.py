@@ -10,10 +10,15 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import mysql.connector
 from PIL import Image
+from tkcalendar import DateEntry
 
 from models.users import Session
-from repositories import InventoryRepository, CategoryRepository
+from repositories import (
+    InventoryRepository, CategoryRepository, RequestRepository, TransactionRepository,
+    UserRepository, AnalyticsRepository,
+)
 from models.inventory import InventoryItem, Category
+from models.account_validation import validate_new_account, validate_password
 
 app = ctk.CTk()
 app.geometry("1000x650")
@@ -36,8 +41,8 @@ if current_user.get("role", "").lower() != "admin":
     subprocess.Popen([sys.executable, os.path.join(os.path.dirname(__file__), "main.py")])
     sys.exit()
 
-DARK_BLUE = "#1e3aa8"  
-BG_BLUE = "#a5b4fc" 
+DARK_BLUE = "#1c3b7a"
+BG_BLUE = "#eef2ff"
 WHITE = "#ffffff"
 TEXT_BLUE = "#1e3a8a"
 RED = "#ef4444"
@@ -54,7 +59,7 @@ main_bg.pack(fill="both", expand=True)
 # ==========================================
 # HEADER
 # ==========================================
-header_frame = ctk.CTkFrame(main_bg, height=80, fg_color=DARK_BLUE, corner_radius=0)
+header_frame = ctk.CTkFrame(main_bg, height=70, fg_color=DARK_BLUE, corner_radius=0)
 header_frame.pack(fill="x", side="top")
 
 # Logo
@@ -66,129 +71,155 @@ try:
 except Exception:
     ctk.CTkLabel(header_frame, text="[LOGO]", text_color=WHITE, font=("Arial", 16, "bold")).place(x=20, y=25)
 
-ctk.CTkLabel(header_frame, text="Greetings, Admin", font=("Arial", 28, "bold"), text_color=WHITE).place(x=90, y=20)
+ctk.CTkLabel(header_frame, text="Greetings, Admin", font=("Arial", 24, "bold"),
+             text_color=WHITE).pack(side="left", padx=(90, 0), pady=16)
 
 def logout():
-    confirm = messagebox.askyesno("Confirm Logout", "Are you sure you want to log out?")
-    
-    if confirm:
-        Session.clear()
-        app.destroy()
-        subprocess.Popen([sys.executable, os.path.join(os.path.dirname(__file__), "main.py")])
+    LogoutConfirmationModal(app)
 
 logout_btn = ctk.CTkButton(header_frame, text="Log out", width=100, height=35, fg_color=RED, hover_color="#dc2626", corner_radius=8, font=("Arial", 14, "bold"), command=logout)
-logout_btn.place(x=870, y=22)
+logout_btn.pack(side="right", padx=20, pady=17)
 
 # ==========================================
 # NAVIGATION BAR
 # ==========================================
 nav_frame = ctk.CTkFrame(main_bg, height=60, fg_color=WHITE, corner_radius=20)
 nav_frame.pack(fill="x", padx=20, pady=15)
+nav_frame.grid_columnconfigure(0, weight=1)
+nav_frame.grid_columnconfigure(6, weight=1)
+tabs = ["Analytics", "Inventory Managemt", "Requests", "Transactions", "Accounts"]
+nav_buttons_frame = ctk.CTkFrame(nav_frame, fg_color="transparent")
+nav_buttons_frame.grid(row=0, column=1, sticky="ew", pady=12)
+nav_buttons_frame.grid_columnconfigure(tuple(range(len(tabs))), weight=1)
 
-tabs = ["Analytics", "Inventory Managemt", "Request", "Transactions", "Accounts"]
 nav_buttons = {}
 for i, tab in enumerate(tabs):
     bg_color = DARK_BLUE if tab == "Analytics" else TEXT_BLUE
     btn = ctk.CTkButton(
-        nav_frame,
+        nav_buttons_frame,
         text=tab,
-        width=160,
+        width=145,
         height=35,
         fg_color=bg_color,
-        corner_radius=15,
+        corner_radius=6,
         font=("Arial", 12, "bold"),
         command=lambda selected_tab=tab: show_tab(selected_tab),
     )
-    btn.place(x=20 + (i * 180), y=12)
+    btn.grid(row=0, column=i, padx=4, sticky="ew")
     nav_buttons[tab] = btn
 
 # ==========================================
-# MAIN CONTENT AREA
+# ANALYTICS
 # ==========================================
-content_frame = ctk.CTkFrame(main_bg, fg_color=DARK_BLUE, corner_radius=15)
-content_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+def create_analytics_tab(parent_frame):
+    repository = AnalyticsRepository()
+    frame = ctk.CTkFrame(parent_frame, fg_color=BG_BLUE, corner_radius=0)
+    frame.pack(fill="both", expand=True)
+    cards = ctk.CTkFrame(frame, fg_color="transparent")
+    cards.pack(fill="x", padx=20, pady=(20, 10))
+    for column in range(3):
+        cards.grid_columnconfigure(column, weight=1)
 
-ctk.CTkLabel(content_frame, text="Data Insights", font=("Arial", 18, "bold"), text_color=WHITE).place(x=20, y=10)
-ctk.CTkButton(content_frame, text="Refresh", width=80, height=28, fg_color=WHITE, text_color=DARK_BLUE, corner_radius=15, font=("Arial", 12, "bold")).place(x=850, y=10)
+    card_values = {}
+    for column, (key, title) in enumerate((
+        ("total_stock", "Total Items"),
+        ("pending_requests", "Pending Requests"),
+        ("active_users", "Active Users"),
+    )):
+        card = ctk.CTkFrame(cards, fg_color=WHITE, corner_radius=8,
+                            border_width=1, border_color="#d1d5db")
+        card.grid(row=0, column=column, sticky="ew", padx=5)
+        ctk.CTkLabel(card, text=title, text_color=TEXT_BLUE,
+                     font=("Arial", 12, "bold")).pack(anchor="w", padx=15, pady=(12, 2))
+        value = ctk.CTkLabel(card, text="0", text_color=TEXT_BLUE,
+                             font=("Arial", 26, "bold"))
+        value.pack(anchor="w", padx=15, pady=(0, 12))
+        card_values[key] = value
 
-inner_frame = ctk.CTkFrame(content_frame, fg_color=BG_BLUE, corner_radius=0)
-inner_frame.pack(fill="both", expand=True, padx=2, pady=(45, 2))
+    charts = ctk.CTkFrame(frame, fg_color="transparent")
+    charts.pack(fill="both", expand=True, padx=20, pady=10)
+    charts.grid_columnconfigure((0, 1), weight=1)
+    charts.grid_rowconfigure(0, weight=1)
+    left_chart = ctk.CTkFrame(charts, fg_color=WHITE, corner_radius=8,
+                              border_width=1, border_color="#d1d5db")
+    right_chart = ctk.CTkFrame(charts, fg_color=WHITE, corner_radius=8,
+                               border_width=1, border_color="#d1d5db")
+    left_chart.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+    right_chart.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+    log_header = ctk.CTkFrame(frame, height=38, fg_color="#1c3b7a", corner_radius=8)
+    log_header.pack(fill="x", padx=20, pady=(0, 0))
+    log_header.pack_propagate(False)
+    ctk.CTkLabel(log_header, text="Recent System Activity", text_color=WHITE,
+                 font=("Arial", 14, "bold")).pack(side="left", padx=15)
+    logs = ctk.CTkScrollableFrame(frame, fg_color=WHITE, corner_radius=8)
+    logs.pack(fill="both", expand=True, padx=20, pady=20)
 
-chart_card = ctk.CTkFrame(inner_frame, width=460, fg_color=WHITE, corner_radius=15, border_width=1, border_color="#d1d5db")
-chart_card.pack(side="left", fill="both", expand=True, padx=(10, 5), pady=10)
-chart_card.pack_propagate(False)
+    def refresh():
+        try:
+            stats = repository.get_summary_stats()
+            for key, label in card_values.items():
+                label.configure(text=str(stats[key]))
+            top_items = repository.get_top_requested_items()
+            category_data = repository.get_category_request_distribution()
+            for widget in left_chart.winfo_children() + right_chart.winfo_children():
+                widget.destroy()
+            item_names = [row["item_name"] for row in top_items]
+            item_counts = [row["request_count"] for row in top_items]
+            figure = Figure(figsize=(4, 2.2), dpi=90)
+            figure.patch.set_alpha(0)
+            axis = figure.add_subplot(111)
+            axis.bar(item_names, item_counts, color="#1c3b7a")
+            axis.set_title("Most Requested Items")
+            axis.tick_params(axis="x", rotation=25, labelsize=8)
+            figure.tight_layout()
+            canvas = FigureCanvasTkAgg(figure, master=left_chart)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
+            labels = [row["category_name"] for row in category_data]
+            counts = [row["request_count"] for row in category_data]
+            figure = Figure(figsize=(4, 2.2), dpi=90)
+            figure.patch.set_alpha(0)
+            axis = figure.add_subplot(111)
+            if counts:
+                axis.pie(counts, labels=labels, autopct="%1.1f%%")
+            axis.set_title("Categories Requested")
+            figure.tight_layout()
+            canvas = FigureCanvasTkAgg(figure, master=right_chart)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
+            for widget in logs.winfo_children():
+                widget.destroy()
+            headers = ("Log ID", "User", "Action", "Table", "Description", "Date/Time")
+            for column, title in enumerate(headers):
+                ctk.CTkLabel(logs, text=title, fg_color="#dbeafe",
+                             text_color=TEXT_BLUE, anchor="w").grid(
+                    row=0, column=column, sticky="ew", padx=1, pady=1)
+                logs.grid_columnconfigure(column, weight=1, minsize=90)
+            for row_index, row in enumerate(repository.get_recent_logs(), 1):
+                values = (row.get("log_id"), row.get("user") or row.get("user_id"),
+                          row.get("action"), row.get("table_affected"),
+                          row.get("description"), row.get("timestamp"))
+                for column, value in enumerate(values):
+                    ctk.CTkLabel(logs, text=str(value or ""), fg_color=WHITE,
+                                 text_color="black", anchor="w").grid(
+                        row=row_index, column=column, sticky="ew", padx=1, pady=1)
+        except (ValueError, mysql.connector.Error) as error:
+            messagebox.showerror("Analytics Unavailable", str(error), parent=app)
 
-ctk.CTkLabel(chart_card, text="System Analytics", font=("Arial", 16, "bold"), text_color=TEXT_BLUE).pack(pady=(10, 0))
+    ctk.CTkButton(log_header, text="Refresh", width=80, height=26,
+                  fg_color=WHITE, text_color="#1c3b7a", command=refresh).pack(
+        side="right", padx=10, pady=6)
+    refresh()
+    return frame
 
 
-fig = Figure(figsize=(5, 4), dpi=100)
-fig.patch.set_facecolor('#ffffff')
-
-ax1 = fig.add_subplot(211)
-
-dept_labels = ['IT', 'Engineering', 'Business', 'Health']
-dept_sizes = [45, 25, 20, 10]
-wedges, texts, autotexts = ax1.pie(dept_sizes, labels=dept_labels, autopct='%1.1f%%', startangle=90, colors=['#3b82f6', '#8b5cf6', '#f59e0b', '#10b981'])
-centre_circle = plt.Circle((0,0),0.60,fc='white')
-fig.gca().add_artist(centre_circle)
-ax1.set_title("Users by Department", fontsize=10, fontweight='bold', pad=5)
-
-ax2 = fig.add_subplot(212)
-# NOTE: Replace with -> cursor.execute("SELECT i.item_name, SUM(r.quantity) FROM item_requests r JOIN inventory_items i ON r.item_id = i.item_id GROUP BY i.item_name ORDER BY SUM(r.quantity) DESC LIMIT 3")
-items = ['Arduino Uno', 'ESP32', 'Breadboard']
-requests = [120, 95, 80]
-ax2.bar(items, requests, color=['#1e3a8a', '#2563eb', '#60a5fa'])
-ax2.set_title("Most Requested Items", fontsize=10, fontweight='bold', pad=5)
-fig.tight_layout()
-
-canvas = FigureCanvasTkAgg(fig, master=chart_card)
-canvas.draw()
-canvas.get_tk_widget().pack(fill="both", expand=True, padx=5, pady=5)
-
-
-logs_card = ctk.CTkFrame(inner_frame, width=460, fg_color=WHITE, corner_radius=15, border_width=1, border_color="#d1d5db")
-logs_card.pack(side="right", fill="both", expand=True, padx=(5, 10), pady=10)
-logs_card.pack_propagate(False)
-
-log_top = ctk.CTkFrame(logs_card, height=40, fg_color=DARK_BLUE, corner_radius=15)
-log_top.pack(fill="x", padx=10, pady=10)
-
-ctk.CTkLabel(log_top, text="Logs", font=("Arial", 16, "bold"), text_color=WHITE).place(x=15, y=5)
-ctk.CTkButton(log_top, text="Refresh", width=70, height=25, fg_color=WHITE, text_color=DARK_BLUE, corner_radius=15).place(x=150, y=7)
-ctk.CTkLabel(log_top, text="Search:", font=("Arial", 12, "bold"), text_color=WHITE).place(x=230, y=8)
-ctk.CTkEntry(log_top, width=130, height=25, corner_radius=10, fg_color=WHITE, text_color="black").place(x=290, y=7)
+content_frame = create_analytics_tab(main_bg)
 
 style = ttk.Style()
 style.theme_use("default")
 style.configure("Treeview", background=WHITE, foreground="black", rowheight=25, fieldbackground=WHITE, borderwidth=0)
 style.configure("Treeview.Heading", background=BG_BLUE, foreground="black", font=('Arial', 10, 'bold'))
 style.map('Treeview', background=[('selected', '#dbeafe')])
-
-columns = ("log_no", "user_no", "action", "table", "record", "time")
-tree_frame = ctk.CTkFrame(logs_card, fg_color=WHITE)
-tree_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-
-tree = ttk.Treeview(tree_frame, columns=columns, show="headings")
-tree.heading("log_no", text="Log No.")
-tree.heading("user_no", text="User No.")
-tree.heading("action", text="Action")
-tree.heading("table", text="Table Affected")
-tree.heading("record", text="Record ID")
-tree.heading("time", text="Timestamp")
-
-tree.column("log_no", width=60, anchor="center")
-tree.column("user_no", width=70, anchor="center")
-tree.column("action", width=120, anchor="w")
-tree.column("table", width=100, anchor="center")
-tree.column("record", width=70, anchor="center")
-tree.column("time", width=130, anchor="center")
-
-tree.pack(side="left", fill="both", expand=True)
-
-scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
-tree.configure(yscrollcommand=scrollbar.set)
-scrollbar.pack(side="right", fill="y")
-
 
 def create_inventory_tab(parent_frame):
     inventory_repo = InventoryRepository()
@@ -202,16 +233,16 @@ def create_inventory_tab(parent_frame):
 
     ctk.CTkLabel(header_frame, text="Items Catalogue", font=("Arial", 14, "bold"), text_color="white").pack(side="left", padx=15)
 
-    search_entry = ctk.CTkEntry(header_frame, width=150, height=28, corner_radius=15, fg_color="white", text_color="black")
+    search_entry = ctk.CTkEntry(header_frame, width=150, height=30, corner_radius=6, fg_color="white", text_color="black")
     search_entry.pack(side="right", padx=(5, 15), pady=8)
     ctk.CTkLabel(header_frame, text="Search :", font=("Arial", 12, "bold"), text_color="white").pack(side="right", padx=5)
 
-    filter_combo = ctk.CTkComboBox(header_frame, width=120, height=28, corner_radius=15, fg_color="white", text_color="black", button_color="white", values=["All", "Available", "Requested"])
+    filter_combo = ctk.CTkComboBox(header_frame, width=120, height=30, corner_radius=6, fg_color="white", text_color="black", button_color="white", values=["All", "Available", "Requested"])
     filter_combo.pack(side="right", padx=(5, 15), pady=8)
     ctk.CTkLabel(header_frame, text="Filter :", font=("Arial", 12, "bold"), text_color="white").pack(side="right", padx=5)
 
     catalogue_container = ctk.CTkScrollableFrame(inventory_frame, fg_color="white", corner_radius=8)
-    catalogue_container.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+    catalogue_container.pack(fill="both", expand=True, padx=20, pady=20)
     catalogue_container.grid_columnconfigure((0, 1, 2), weight=1)
 
     def load_inventory_cards(search_term="", filter_status="All"):
@@ -260,7 +291,7 @@ def create_inventory_tab(parent_frame):
     def refresh_data():
         load_inventory_cards(search_term=search_entry.get(), filter_status=filter_combo.get())
 
-    refresh_btn = ctk.CTkButton(header_frame, text="Refresh", width=80, height=28, corner_radius=15, fg_color="white", text_color="black", hover_color="#f3f4f6", font=("Arial", 12, "bold"), command=refresh_data)
+    refresh_btn = ctk.CTkButton(header_frame, text="Refresh", width=80, height=30, corner_radius=6, fg_color="white", text_color="black", hover_color="#f3f4f6", font=("Arial", 12, "bold"), command=refresh_data)
     refresh_btn.pack(side="right", padx=(10, 15), pady=8)
 
     load_inventory_cards()
@@ -294,7 +325,7 @@ def create_inventory_tab_v2(parent_frame):
     search.pack(side="right", padx=15, pady=8)
     ctk.CTkLabel(header, text="Search:", text_color=WHITE).pack(side="right")
     cards = ctk.CTkScrollableFrame(inventory_frame, fg_color=WHITE, corner_radius=8)
-    cards.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+    cards.pack(fill="both", expand=True, padx=20, pady=20)
     cards.grid_columnconfigure((0, 1, 2), weight=1)
 
     def value_text(value):
@@ -344,7 +375,7 @@ def create_inventory_tab_v2(parent_frame):
     def create_category(parent, on_created):
         modal = ctk.CTkToplevel(parent)
         modal.title("Create Category")
-        modal.geometry("430x480")
+        modal.geometry("400x450")
         modal.configure(fg_color=MODAL_BG)
         modal.transient(parent)
         modal.grab_set()
@@ -382,7 +413,7 @@ def create_inventory_tab_v2(parent_frame):
     def edit_category(parent, category, on_updated):
         modal = ctk.CTkToplevel(parent)
         modal.title("Edit Category")
-        modal.geometry("430x480")
+        modal.geometry("400x450")
         modal.configure(fg_color=MODAL_BG)
         modal.transient(parent)
         modal.grab_set()
@@ -438,7 +469,7 @@ def create_inventory_tab_v2(parent_frame):
     def select_category():
         modal = ctk.CTkToplevel(app)
         modal.title("Select Category")
-        modal.geometry("520x480")
+        modal.geometry("500x480")
         modal.configure(fg_color=MODAL_BG)
         modal.transient(app)
         modal.grab_set()
@@ -580,7 +611,7 @@ def create_inventory_tab_v2(parent_frame):
             return
         modal = ctk.CTkToplevel(app)
         modal.title("Manage" if manage else "Item Information")
-        modal.geometry("380x660")
+        modal.geometry("400x600")
         modal.configure(fg_color=MODAL_BG)
         modal.transient(app)
         modal.grab_set()
@@ -850,47 +881,50 @@ def create_inventory_tab_v2(parent_frame):
             return
         modal = ctk.CTkToplevel(app)
         modal.title("Item Details")
-        modal.geometry("500x650")
+        modal.geometry("800x500")
         modal.configure(fg_color=MODAL_BG)
         modal.transient(app)
+        modal.grab_set()
+        modal.protocol("WM_DELETE_WINDOW", modal.destroy)
         ctk.CTkLabel(
             modal, text="Item Details", text_color=WHITE, font=MODAL_TITLE_FONT
-        ).pack(anchor="w", padx=24, pady=(22, 6))
-        preview = ctk.CTkFrame(modal, width=300, height=300, fg_color=WHITE,
-                               corner_radius=8)
-        preview.pack(pady=(0, 14))
-        preview.pack_propagate(False)
+        ).pack(anchor="w", padx=24, pady=(20, 8))
+        content = ctk.CTkFrame(modal, fg_color="transparent")
+        content.pack(fill="both", expand=True, padx=24, pady=(0, 16))
+        content.grid_columnconfigure(0, weight=1, minsize=250)
+        content.grid_columnconfigure(1, weight=2)
+        content.grid_rowconfigure(0, weight=1)
+        preview = ctk.CTkFrame(content, fg_color=WHITE, corner_radius=8)
+        preview.grid(row=0, column=0, sticky="nsew", padx=(0, 16))
         preview_label = ctk.CTkLabel(
             preview, text="Image Preview", text_color="black", font=MODAL_FONT
         )
-        preview_label.pack(pady=(10, 10), anchor="center", expand=True)
+        preview_label.pack(anchor="center", expand=True)
         if item.image_path and os.path.isfile(item.image_path):
             try:
                 source = Image.open(item.image_path)
                 image_preview = ctk.CTkImage(
-                    light_image=source, dark_image=source, size=(270, 270)
+                    light_image=source, dark_image=source, size=(240, 280)
                 )
                 preview_label.configure(image=image_preview, text="")
                 preview_label.image = image_preview
             except (OSError, ValueError):
                 pass
-        card = ctk.CTkFrame(modal, fg_color=MODAL_BG, corner_radius=8,
+        card = ctk.CTkFrame(content, fg_color=MODAL_BG, corner_radius=8,
                             border_width=1, border_color="#334b80")
-        card.pack(fill="both", expand=True, padx=24, pady=(0, 16))
-        ctk.CTkLabel(card, text=f"Category: {item.category_name}",
-                     text_color=WHITE, font=MODAL_FONT).pack(anchor="w", padx=18, pady=(8, 4))
-        ctk.CTkLabel(card, text=f"Item ID: {item.item_id}",
-                     text_color=WHITE, font=MODAL_FONT).pack(anchor="w", padx=18, pady=(0, 8))
-        details = ctk.CTkTextbox(card, height=150, corner_radius=8,
+        card.grid(row=0, column=1, sticky="nsew")
+        details = ctk.CTkTextbox(card, corner_radius=8,
                                  fg_color=WHITE, text_color="black")
-        details.pack(fill="both", expand=True, padx=18, pady=(0, 12))
+        details.pack(fill="both", expand=True, padx=14, pady=14)
         details.insert("1.0", "\n".join(
             f"{key.replace('_', ' ').title()}: {value}"
             for key, value in item.to_dict().items()
         ))
         details.configure(state="disabled")
-        btn_frame = ctk.CTkFrame(modal, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=24, pady=(0, 18))
+        ctk.CTkButton(
+            modal, text="Close", width=110, height=36, fg_color=BLUE,
+            command=modal.destroy,
+        ).pack(anchor="e", padx=24, pady=(0, 18))
 
     def manage(item_id):
         item = inventory_repo.get_by_id(item_id)
@@ -945,13 +979,1197 @@ def create_inventory_tab_v2(parent_frame):
 inventory_frame = create_inventory_tab_v2(main_bg)
 inventory_frame.pack_forget()
 
+
+def create_requests_tab(parent_frame):
+    request_repo = RequestRepository()
+    requests_frame = ctk.CTkFrame(parent_frame, fg_color=BG_BLUE, corner_radius=0)
+    requests_frame.pack(fill="both", expand=True)
+
+    header = ctk.CTkFrame(requests_frame, height=45, fg_color="#1c3b7a", corner_radius=8)
+    header.pack(fill="x", padx=20, pady=(20, 0))
+    header.pack_propagate(False)
+    ctk.CTkLabel(header, text="Requests", font=("Arial", 16, "bold"),
+                 text_color=WHITE).pack(side="left", padx=15)
+
+    toolbar_frame = ctk.CTkFrame(header, fg_color="transparent")
+    toolbar_frame.pack(side="right", padx=20)
+    refresh_button = ctk.CTkButton(
+        toolbar_frame, text="Refresh", width=80, height=30, fg_color=WHITE,
+        text_color="#1c3b7a", hover_color="#e5e7eb", corner_radius=6,
+    )
+    refresh_button.pack(side="left", padx=5)
+    filter_combo = ctk.CTkComboBox(
+        toolbar_frame, width=120, height=30, values=["All", "Pending", "Approved",
+                                                 "Active", "Return Requested", "Cancelled",
+                                                 "Returned"],
+        fg_color=WHITE, text_color="black", button_color=WHITE, corner_radius=6,
+    )
+    filter_combo.set("All")
+    filter_combo.pack(side="left", padx=5)
+    search_entry = ctk.CTkEntry(
+        toolbar_frame, width=150, height=30, fg_color=WHITE, text_color="black",
+        corner_radius=6, placeholder_text="Search",
+    )
+    search_entry.pack(side="left", padx=5)
+
+    column_specs = (
+        (0, 1, 100), (1, 2, 150), (2, 1, 100), (3, 1, 110),
+        (4, 2, 180), (5, 1, 140), (6, 1, 130),
+    )
+    header_frame = ctk.CTkFrame(
+        requests_frame, fg_color="#dbeafe", corner_radius=8,
+        border_width=1, border_color="#d1d5db",
+    )
+    header_frame.pack(fill="x", padx=20, pady=(20, 0))
+    for column, weight, minsize in column_specs:
+        header_frame.grid_columnconfigure(column, weight=weight, minsize=minsize)
+    headings = ["Request No.", "Request By", "Code", "Status",
+                "Request Details", "Date/Time", "Item Details"]
+    for column, heading in enumerate(headings):
+        ctk.CTkLabel(
+            header_frame, text=heading, fg_color="#dbeafe", text_color=TEXT_BLUE,
+            font=("Arial", 11, "bold"), anchor="w",
+        ).grid(row=0, column=column, sticky="ew", padx=8, pady=8)
+
+    table = ctk.CTkScrollableFrame(
+        requests_frame, fg_color=WHITE, corner_radius=8,
+        border_width=1, border_color="#d1d5db",
+    )
+    table.pack(fill="both", expand=True, padx=20, pady=(6, 20))
+    for column, weight, minsize in column_specs:
+        table.grid_columnconfigure(column, weight=weight, minsize=minsize)
+
+    selected = {"request": None, "rows": []}
+
+    def show_request_item_details(item_id):
+        item = InventoryRepository().get_by_id(item_id)
+        if not item:
+            messagebox.showerror("Inventory", "Item could not be found.", parent=app)
+            return
+        modal = ctk.CTkToplevel(app)
+        modal.title("Item Details")
+        modal.geometry("800x500")
+        modal.configure(fg_color=MODAL_BG)
+        modal.transient(app)
+        modal.grab_set()
+        modal.protocol("WM_DELETE_WINDOW", modal.destroy)
+        ctk.CTkLabel(
+            modal, text="Item Details", text_color=WHITE,
+            font=MODAL_TITLE_FONT,
+        ).pack(anchor="w", padx=24, pady=(20, 8))
+        content = ctk.CTkFrame(modal, fg_color="transparent")
+        content.pack(fill="both", expand=True, padx=24, pady=(0, 16))
+        content.grid_columnconfigure(0, weight=1, minsize=250)
+        content.grid_columnconfigure(1, weight=2)
+        content.grid_rowconfigure(0, weight=1)
+        preview = ctk.CTkFrame(content, fg_color=WHITE, corner_radius=8)
+        preview.grid(row=0, column=0, sticky="nsew", padx=(0, 16))
+        preview_label = ctk.CTkLabel(
+            preview, text="No image", text_color="black", font=MODAL_FONT,
+        )
+        preview_label.pack(expand=True)
+        if item.image_path and os.path.isfile(item.image_path):
+            try:
+                source = Image.open(item.image_path)
+                image = ctk.CTkImage(light_image=source, dark_image=source, size=(240, 280))
+                preview_label.configure(image=image, text="")
+                preview_label.image = image
+            except (OSError, ValueError):
+                pass
+        details = ctk.CTkFrame(content, fg_color="transparent")
+        details.grid(row=0, column=1, sticky="nsew")
+        for row, (label, value) in enumerate((
+            ("Item ID", item.item_id), ("Item Name", item.item_name),
+            ("Item Code", item.item_code), ("Category", item.category_name),
+            ("Stock", item.stock), ("Serial No.", item.serial_no or "N/A"),
+            ("Added Date", item.added_date or "N/A"),
+            ("Updated Date", item.updated_date or "N/A"),
+        )):
+            _modal_field(details, label, str(value), disabled=True)
+        ctk.CTkButton(
+            modal, text="Close", width=110, height=36, fg_color=BLUE,
+            command=modal.destroy,
+        ).pack(anchor="e", padx=24, pady=(0, 18))
+
+    def select_request(request, row_widgets):
+        if selected["rows"]:
+            for widget in selected["rows"]:
+                widget.configure(fg_color=WHITE)
+        selected["request"] = request
+        selected["rows"] = row_widgets
+        for widget in row_widgets:
+            widget.configure(fg_color="#bfdbfe")
+
+    def display_requests():
+        for widget in table.winfo_children():
+            widget.destroy()
+        selected["request"] = None
+        selected["rows"] = []
+        try:
+            rows = request_repo.get_all()
+        except mysql.connector.Error as error:
+            messagebox.showerror("Requests Unavailable", str(error), parent=app)
+            return
+
+        filter_value = filter_combo.get()
+        search_value = search_entry.get().strip().lower()
+        row_number = 1
+        for request in rows:
+            searchable = " ".join(
+                str(request.get(key, "") or "")
+                for key in ("request_id", "requester_name", "gmail", "item_code",
+                            "item_name", "request_status")
+            ).lower()
+            if filter_value != "All" and request.get("request_status") != filter_value:
+                continue
+            if search_value and search_value not in searchable:
+                continue
+
+            date_value = request.get("request_date")
+            date_text = date_value.strftime("%Y-%m-%d %H:%M") if date_value else ""
+            values = [
+                f"REQ-{request['request_id']}",
+                request.get("requester_name") or request.get("gmail", "Unknown user"),
+                request.get("item_code", ""),
+                request.get("request_status", ""),
+                f"{request.get('item_name', '')} x{request.get('quantity', 0)}",
+                date_text,
+            ]
+            row_widgets = []
+            for column, value in enumerate(values):
+                label = ctk.CTkLabel(
+                    table, text=str(value), fg_color=WHITE, text_color="black",
+                    anchor="w", wraplength=180,
+                )
+                label.grid(row=row_number, column=column, sticky="ew", padx=3, pady=3)
+                label.bind(
+                    "<Button-1>",
+                    lambda _event=None, item=request, widgets=row_widgets:
+                    select_request(item, widgets),
+                )
+                row_widgets.append(label)
+            details_button = ctk.CTkButton(
+                table, text="View Item Details", width=120, height=26,
+                fg_color=BLUE, hover_color="#254b91", corner_radius=6,
+                command=lambda item_id=request["item_id"]:
+                show_request_item_details(item_id),
+            )
+            details_button.grid(row=row_number, column=6, sticky="ew", padx=3, pady=3)
+            row_number += 1
+
+    def require_selection():
+        if selected["request"] is None:
+            messagebox.showwarning("Select Request", "Select a request first.", parent=app)
+            return None
+        return selected["request"]
+
+    def manage_selected():
+        request = require_selection()
+        if request:
+            RequestModal(app, request, request_repo, display_requests)
+
+    def notify_selected():
+        request = require_selection()
+        if request:
+            NotifyModal(app, request, request_repo)
+
+    refresh_button.configure(command=display_requests)
+    filter_combo.configure(command=lambda _value=None: display_requests())
+    search_entry.bind("<KeyRelease>", lambda _event=None: display_requests())
+
+    controls = ctk.CTkFrame(requests_frame, fg_color="transparent")
+    controls.pack(fill="x", padx=20, pady=(0, 20))
+    ctk.CTkButton(
+        controls, text="MANAGE REQUEST", height=36, fg_color=GREEN,
+        text_color="black", hover_color="#65a30d", corner_radius=6,
+        command=manage_selected,
+    ).pack(side="left", padx=(0, 10))
+    ctk.CTkButton(
+        controls, text="NOTIFY", height=36, fg_color="#f59e0b",
+        text_color="black", hover_color="#d97706", corner_radius=6,
+        command=notify_selected,
+    ).pack(side="left")
+
+    display_requests()
+    return requests_frame
+
+
+def _modal_field(parent, label, value="", height=36, disabled=False):
+    ctk.CTkLabel(parent, text=label, text_color=WHITE, font=MODAL_FONT).pack(
+        anchor="w", pady=(6, 2)
+    )
+    widget = ctk.CTkTextbox(parent, height=height, corner_radius=8) if height > 36 else \
+        ctk.CTkEntry(parent, corner_radius=8)
+    widget.configure(fg_color=WHITE, text_color="black")
+    widget.pack(fill="x", pady=(0, 5))
+    if height > 36:
+        widget.insert("1.0", value)
+    else:
+        widget.insert(0, value)
+    if disabled:
+        widget.configure(state="disabled")
+    return widget
+
+
+def _field_value(widget):
+    return widget.get("1.0", "end-1c") if isinstance(widget, ctk.CTkTextbox) else widget.get()
+
+
+class RequestModal:
+    def __init__(self, parent, request, repository, on_changed):
+        self.request = request
+        self.repository = repository
+        self.on_changed = on_changed
+        self.modal = ctk.CTkToplevel(parent)
+        self.modal.title("Item Request")
+        self.modal.geometry("800x500")
+        self.modal.configure(fg_color=MODAL_BG)
+        self.modal.transient(parent)
+        self.modal.grab_set()
+        self.modal.protocol("WM_DELETE_WINDOW", self.modal.destroy)
+
+        body = ctk.CTkFrame(self.modal, fg_color=MODAL_BG)
+        body.pack(fill="both", expand=True, padx=24, pady=20)
+        ctk.CTkLabel(body, text="Item Request", text_color=WHITE,
+                     font=MODAL_TITLE_FONT).pack(anchor="w", pady=(0, 10))
+
+        content = ctk.CTkFrame(body, fg_color="transparent")
+        content.pack(fill="both", expand=True)
+        content.grid_columnconfigure(0, weight=1, minsize=260)
+        content.grid_columnconfigure(1, weight=2)
+        content.grid_rowconfigure(0, weight=1)
+        image_frame = ctk.CTkFrame(content, fg_color=WHITE, corner_radius=8)
+        image_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 18))
+        image_frame.pack_propagate(False)
+        image_label = ctk.CTkLabel(image_frame, text="No image", text_color="black")
+        image_label.pack(expand=True)
+        image_path = request.get("image_path")
+        if image_path and os.path.isfile(image_path):
+            try:
+                source = Image.open(image_path)
+                image = ctk.CTkImage(light_image=source, dark_image=source, size=(180, 130))
+                image_label.configure(image=image, text="")
+                image_label.image = image
+            except (OSError, ValueError):
+                pass
+
+        details = ctk.CTkScrollableFrame(content, fg_color=MODAL_BG)
+        details.grid(row=0, column=1, sticky="nsew")
+        user_fields = (
+            ("Full Name", request.get("requester_name", "")),
+            ("Student No.", request.get("student_id", "")),
+            ("Department", request.get("department", "")),
+            ("Course", request.get("course", "")),
+            ("Address", request.get("address", ""), 55),
+            ("Contact No.", request.get("contact_number", "")),
+            ("Login Email", request.get("gmail", "")),
+        )
+        for field in user_fields:
+            _modal_field(details, field[0], str(field[1]), height=field[2] if len(field) == 3 else 36, disabled=True)
+        _modal_field(details, "Category", request.get("category_name", "N/A"), disabled=True)
+        _modal_field(details, "Item ID", str(request.get("item_id", "")), disabled=True)
+        _modal_field(details, "Item Details", request.get("item_description", ""), height=65, disabled=True)
+        self.quantity = _modal_field(details, "Quantity/Serial No.", str(request.get("quantity", 1)))
+        self.status = ctk.CTkComboBox(
+            details, values=["Pending", "Approved", "Cancelled", "Returned"],
+            fg_color=WHITE, text_color="black", button_color=WHITE, corner_radius=8,
+        )
+        ctk.CTkLabel(details, text="Unit/Status", text_color=WHITE, font=MODAL_FONT).pack(
+            anchor="w", pady=(6, 2)
+        )
+        self.status.pack(fill="x", pady=(0, 10))
+        self.status.set(request.get("request_status", "Pending"))
+        self.confirm_button = ctk.CTkButton(
+            details, text="", height=40, fg_color=GREEN,
+            text_color="black", corner_radius=6, command=self.confirm_lifecycle,
+        )
+        self.confirm_button.pack(fill="x", pady=(0, 8))
+        self._update_confirm_button()
+
+        actions = ctk.CTkFrame(details, fg_color="transparent")
+        actions.pack(fill="x", pady=(5, 8))
+        for column in range(3):
+            actions.grid_columnconfigure(column, weight=1, uniform="request_action")
+        ctk.CTkButton(actions, text="EDIT", height=35, fg_color="#f59e0b",
+                      text_color="black", corner_radius=6,
+                      command=self.save_edits).grid(row=0, column=0, sticky="ew", padx=3)
+        ctk.CTkButton(actions, text="DELETE", height=35, fg_color=RED,
+                      corner_radius=6, command=self.delete).grid(row=0, column=1, sticky="ew", padx=3)
+        ctk.CTkButton(actions, text="NOTIFY", height=35, fg_color=PURPLE,
+                      corner_radius=6, command=lambda: NotifyModal(self.modal, request, repository)
+                      ).grid(row=0, column=2, sticky="ew", padx=3)
+        ctk.CTkButton(
+            details, text="CLOSE", height=35, fg_color=RED,
+            corner_radius=6, command=self.modal.destroy,
+        ).pack(fill="x", pady=(0, 8))
+    def _update_confirm_button(self):
+        labels = {
+            "Pending": "CONFIRM REQUEST",
+            "Approved": "CONFIRM RECEIVED ITEM",
+            "Active": "CONFIRM RETURN",
+            "Return Requested": "CONFIRM RETURN",
+        }
+        self.confirm_button.configure(
+            text=labels.get(self.request.get("request_status"), "CONFIRM REQUEST")
+        )
+
+    def save_edits(self):
+        try:
+            self.request["quantity"] = int(self.quantity.get())
+            self.request["request_status"] = self.status.get()
+            self.repository.update(self.request)
+            self.on_changed()
+            messagebox.showinfo("Request Updated", "Request details were updated.", parent=self.modal)
+        except (ValueError, mysql.connector.Error) as error:
+            messagebox.showerror("Request Error", str(error), parent=self.modal)
+
+    def delete(self):
+        if not messagebox.askyesno("Delete Request", "Delete this request?", parent=self.modal):
+            return
+        try:
+            self.repository.delete(self.request["request_id"])
+            self.modal.destroy()
+            self.on_changed()
+        except (ValueError, mysql.connector.Error) as error:
+            messagebox.showerror("Request Error", str(error), parent=self.modal)
+
+    def approve(self):
+        if not messagebox.askyesno("Confirm Request", "Approve this request?", parent=self.modal):
+            return
+        try:
+            self.repository.approve(self.request["request_id"])
+            self.modal.destroy()
+            self.on_changed()
+        except mysql.connector.Error as error:
+            messagebox.showerror("Request Error", str(error), parent=self.modal)
+
+    def confirm_lifecycle(self):
+        status = self.request.get("request_status")
+        if not messagebox.askyesno(
+            "Confirm Request", "Confirm this request transition?", parent=self.modal
+        ):
+            return
+        try:
+            if status == "Pending":
+                changed = self.repository.approve(self.request["request_id"])
+            elif status == "Approved":
+                changed = self.repository.confirm_pickup(
+                    self.request["request_id"],
+                    current_user["user_id"],
+                    self.request["item_id"],
+                    int(self.request["quantity"]),
+                )
+            elif status in {"Active", "Return Requested"}:
+                changed = self.repository.confirm_return(
+                    self.request["request_id"],
+                    current_user["user_id"],
+                    self.request["item_id"],
+                    int(self.request["quantity"]),
+                    "Good",
+                    "Returned in good condition.",
+                )
+            else:
+                changed = False
+            if not changed:
+                raise ValueError("The request could not be updated.")
+            self.modal.destroy()
+            self.on_changed()
+        except (ValueError, mysql.connector.Error) as error:
+            messagebox.showerror("Request Error", str(error), parent=self.modal)
+
+
+class NotifyModal:
+    def __init__(self, parent, request, repository):
+        self.repository = repository
+        self.request = request
+        self.modal = ctk.CTkToplevel(parent)
+        self.modal.title("Send Notification")
+        self.modal.geometry("750x450")
+        self.modal.configure(fg_color=MODAL_BG)
+        self.modal.transient(parent)
+        self.modal.grab_set()
+        body = ctk.CTkFrame(self.modal, fg_color=MODAL_BG)
+        body.pack(fill="both", expand=True, padx=24, pady=24)
+        recipient = request.get("requester_name") or request.get("gmail", "Unknown user")
+        ctk.CTkLabel(body, text=f"To: {recipient}", text_color=WHITE,
+                     font=MODAL_FONT).pack(anchor="w", pady=(0, 12))
+        self.message = ctk.CTkTextbox(body, height=130, corner_radius=8,
+                                      fg_color=WHITE, text_color="black")
+        self.message.pack(fill="both", expand=True, pady=(0, 15))
+        ctk.CTkButton(body, text="SEND", height=38, fg_color=PURPLE,
+                      corner_radius=6, command=self.send).pack(fill="x")
+
+    def send(self):
+        try:
+            self.repository.notify(self.request["requester_id"], _field_value(self.message))
+            self.modal.destroy()
+            messagebox.showinfo("Notification Sent", "The notification was sent.", parent=app)
+        except (ValueError, mysql.connector.Error) as error:
+            messagebox.showerror("Notification Error", str(error), parent=self.modal)
+
+
+requests_frame = create_requests_tab(main_bg)
+requests_frame.pack_forget()
+
+
+def create_transactions_tab(parent_frame):
+    repository = TransactionRepository()
+    frame = ctk.CTkFrame(parent_frame, fg_color=BG_BLUE, corner_radius=0)
+    frame.pack(fill="both", expand=True)
+    state = {"mode": "current", "selected": None, "widgets": []}
+
+    header = ctk.CTkFrame(frame, height=45, fg_color="#1c3b7a", corner_radius=8)
+    header.pack(fill="x", padx=20, pady=(20, 0))
+    header.pack_propagate(False)
+    ctk.CTkLabel(header, text="Transactions", text_color=WHITE,
+                 font=("Arial", 16, "bold")).pack(side="left", padx=15)
+
+    def refresh():
+        load_rows()
+
+    toggle = ctk.CTkButton(header, text="ARCHIVE", width=90, height=30,
+                           fg_color="#1c3b7a", hover_color="#254b91",
+                           corner_radius=6, command=lambda: switch_mode())
+    toggle.pack(side="left", padx=10)
+    toolbar = ctk.CTkFrame(header, fg_color="transparent")
+    toolbar.pack(side="right", padx=20)
+    ctk.CTkButton(toolbar, text="Refresh", width=80, height=30, fg_color=WHITE,
+                  text_color="#1c3b7a", corner_radius=6,
+                  command=refresh).pack(side="left", padx=5)
+    filter_combo = ctk.CTkComboBox(toolbar, width=120, height=30,
+                                   values=["All", "Borrow", "Return"],
+                                   fg_color=WHITE, text_color="black",
+                                   button_color=WHITE, corner_radius=6)
+    filter_combo.set("All")
+    filter_combo.pack(side="left", padx=5)
+    search = ctk.CTkEntry(toolbar, width=150, height=30, fg_color=WHITE,
+                          text_color="black", corner_radius=6, placeholder_text="Search")
+    search.pack(side="left", padx=5)
+
+    table = ctk.CTkScrollableFrame(frame, fg_color=WHITE, corner_radius=8)
+    table.pack(fill="both", expand=True, padx=20, pady=20)
+    widths = [100, 130, 250, 130, 150]
+    for index, width in enumerate(widths):
+        table.grid_columnconfigure(index, weight=1 if index == 2 else 0, minsize=width)
+    for index, title in enumerate(
+        ["Track No.", "Requested Item No.", "Transaction Details",
+         "Request Status", "Date/Time"]
+    ):
+        ctk.CTkLabel(table, text=title, fg_color="#dbeafe", text_color=TEXT_BLUE,
+                     font=("Arial", 11, "bold"), anchor="w").grid(
+                         row=0, column=index, sticky="ew", padx=1, pady=1
+                     )
+
+    def select(row, widgets):
+        for widget in state["widgets"]:
+            widget.configure(fg_color=WHITE)
+        state["selected"] = row
+        state["widgets"] = widgets
+        for widget in widgets:
+            widget.configure(fg_color="#bfdbfe")
+
+    def load_rows():
+        for widget in table.winfo_children():
+            if int(widget.grid_info().get("row", 0)) > 0:
+                widget.destroy()
+        state["selected"] = None
+        state["widgets"] = []
+        try:
+            rows = repository.get_all(state["mode"])
+        except (ValueError, mysql.connector.Error) as error:
+            messagebox.showerror("Transactions Unavailable", str(error), parent=app)
+            return
+        filter_value = filter_combo.get()
+        term = search.get().strip().lower()
+        row_index = 1
+        for row in rows:
+            text = " ".join(str(value or "") for value in row.values()).lower()
+            if filter_value != "All" and row.get("transaction_type") != filter_value:
+                continue
+            if term and term not in text:
+                continue
+            date_value = row.get("transaction_date")
+            values = [
+                f"TRX-{row['transaction_id']}",
+                f"REQ-{row['request_id']}",
+                f"{row.get('transaction_type', '')}: {row.get('item_name', '')} "
+                f"x{row.get('quantity', 0)}",
+                row.get("request_status", ""),
+                date_value.strftime("%Y-%m-%d %H:%M") if date_value else "",
+            ]
+            widgets = []
+            for column, value in enumerate(values):
+                label = ctk.CTkLabel(table, text=str(value), fg_color=WHITE,
+                                     text_color="black", anchor="w", wraplength=240)
+                label.grid(row=row_index, column=column, sticky="ew", padx=1, pady=1)
+                label.bind("<Button-1>",
+                           lambda _event=None, item=row, cells=widgets: select(item, cells))
+                widgets.append(label)
+            row_index += 1
+
+    def require_selected():
+        if state["selected"] is None:
+            messagebox.showwarning("Select Transaction", "Select a transaction first.", parent=app)
+        return state["selected"]
+
+    def confirm_action(title, message, action):
+        row = require_selected()
+        if row is None or not messagebox.askyesno(title, message, parent=app):
+            return
+        try:
+            if not action(row["transaction_id"]):
+                raise ValueError("The transaction could not be updated.")
+            load_rows()
+        except (ValueError, mysql.connector.Error) as error:
+            messagebox.showerror("Transaction Error", str(error), parent=app)
+
+    def switch_mode():
+        state["mode"] = "archived" if state["mode"] == "current" else "current"
+        toggle.configure(text="CURRENT" if state["mode"] == "archived" else "ARCHIVE")
+        load_rows()
+        update_actions()
+
+    actions = ctk.CTkFrame(frame, fg_color="transparent")
+    actions.pack(fill="x", padx=20, pady=(0, 20))
+    current_button = ctk.CTkButton(
+        actions, text="ARCHIVED", height=36, fg_color=GREEN, text_color="black",
+        corner_radius=6, command=lambda: confirm_action(
+            "Archive Transaction", "Archive this transaction?", repository.archiveTransaction
+        ),
+    )
+    restore_button = ctk.CTkButton(
+        actions, text="RESTORE", height=36, fg_color=GREEN, text_color="black",
+        corner_radius=6, command=lambda: confirm_action(
+            "Restore Transaction", "Restore this transaction?", repository.restoreTransaction
+        ),
+    )
+    delete_button = ctk.CTkButton(
+        actions, text="DELETE", height=36, fg_color=RED, corner_radius=6,
+        command=lambda: confirm_action(
+            "Delete Transaction", "Delete this archived transaction?", repository.delete
+        ),
+    )
+
+    def update_actions():
+        for button in (current_button, restore_button, delete_button):
+            button.pack_forget()
+        if state["mode"] == "current":
+            current_button.pack(side="left")
+        else:
+            delete_button.pack(side="right", padx=(10, 0))
+            restore_button.pack(side="right")
+
+    filter_combo.configure(command=lambda _value=None: load_rows())
+    search.bind("<KeyRelease>", lambda _event=None: load_rows())
+    update_actions()
+    load_rows()
+    return frame
+
+
+transactions_frame = create_transactions_tab(main_bg)
+transactions_frame.pack_forget()
+
+
+class AccountEditor:
+    department_data = {
+        "College of Arts & Sciences": [
+            "ABCom - Bachelor of Arts in Communication",
+            "ABEng - Bachelor of Arts in English",
+            "BSM - Bachelor of Science in Mathematics",
+            "BSP - Bachelor of Science in Psychology",
+        ],
+        "College of Business & Accountancy": [
+            "ABA - Associate in Business Administration",
+            "BSAIS - Bachelor of Science in Accounting Information System",
+            "BSA - Bachelor of Science in Accountancy",
+            "BSMA - Bachelor of Science in Management Accounting",
+            "BSREM - Bachelor of Science in Real Estate Management",
+            "BSIA - Bachelor of Science in Internal Auditing",
+            "BSLM - Bachelor of Science in Legal Management",
+            "BSBA - Bachelor of Science in Business Administration",
+        ],
+        "College of Computer Studies": [
+            "ACT - Associate in Computer Technology",
+            "BSCS - Bachelor of Science in Computer Science",
+            "BSIT - Bachelor of Science in Information Technology",
+            "BSIS - Bachelor of Science in Information System",
+        ],
+        "College of Teacher Education": [
+            "BECEd - Bachelor in Early Childhood Education",
+            "BELEMEd - Bachelor in Elementary Education",
+            "BSEd - Bachelor in Secondary Education",
+            "BTVTEd - Bachelor in Technical Vocational Teacher Education",
+            "CPT - Certificate in Teaching Program",
+        ],
+        "College of Criminology & Administration": [
+            "BSC - Bachelor of Science in Criminology",
+            "BSISM - Bachelor of Science in Industrial Security Management",
+            "BPA - Bachelor in Public Administration",
+        ],
+        "College of Engineering": [
+            "BSCE - Bachelor of Science in Computer Engineering",
+            "BSELE - Bachelor of Science in Electronics Engineering",
+        ],
+        "College of Health Sciences": [
+            "BSMedTech - Bachelor of Science in Medical Technology",
+            "BSN - Bachelor of Science in Nursing",
+            "BSRadTech - Bachelor of Science in Radiologic Technology",
+            "DHWA - Diploma in Health Care & Wellness Associate",
+        ],
+        "International School of Hospitality & Tourism Management": [
+            "BSHM - Bachelor of Science in Hospitality Management",
+            "BSTM - Bachelor of Science in Tourism Management",
+            "DHRM1 - Diploma in Hotel & Restaurant Management-1",
+            "DHRM2 - Diploma in Hotel & Restaurant Management-2",
+        ],
+        "Senior High Department": ["ACADEMIC-TRACK", "TECH-PRO-TRACK"],
+    }
+
+    def __init__(self, parent, repository, account=None, on_changed=None):
+        self.repository = repository
+        self.account = account
+        self.on_changed = on_changed or (lambda: None)
+        details = {}
+        if account is not None:
+            details = repository.get_by_id(account["account_id"]) or {}
+        self.modal = ctk.CTkToplevel(parent)
+        self.modal.title("Create Account" if account is None else "Update Account")
+        self.modal.geometry("700x700")
+        self.modal.configure(fg_color="#1e3a8a")
+        self.modal.transient(parent)
+        self.modal.grab_set()
+        card = ctk.CTkFrame(
+            self.modal, fg_color=WHITE, corner_radius=15,
+            border_width=1, border_color="#d1d5db",
+        )
+        card.pack(fill="both", expand=True, padx=24, pady=24)
+        card.grid_columnconfigure(0, weight=1, uniform="account")
+        card.grid_columnconfigure(1, weight=0)
+        card.grid_columnconfigure(2, weight=2, uniform="account")
+        card.grid_rowconfigure(2, weight=1)
+        ctk.CTkLabel(
+            card, text=self.modal.title(), text_color=TEXT_BLUE,
+            font=("Arial", 24, "bold"),
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=28, pady=(20, 8))
+
+        left = ctk.CTkFrame(card, fg_color=WHITE, corner_radius=0)
+        left.grid(row=1, column=0, rowspan=2, sticky="nsew", padx=(28, 20), pady=(0, 24))
+        right = ctk.CTkFrame(card, fg_color=WHITE, corner_radius=0)
+        right.grid(row=1, column=2, rowspan=2, sticky="nsew", padx=(20, 28), pady=(0, 24))
+        ctk.CTkFrame(card, width=2, fg_color="#d1d5db").grid(
+            row=1, column=1, rowspan=2, sticky="ns", pady=(0, 24)
+        )
+        left.grid_columnconfigure(0, weight=1)
+        right.grid_columnconfigure((0, 1), weight=1, uniform="personal")
+
+        ctk.CTkLabel(
+            left, text="Account Information", text_color=TEXT_BLUE,
+            font=("Arial", 15, "bold"),
+        ).pack(anchor="w", padx=4, pady=(0, 8))
+        left_form = ctk.CTkFrame(left, fg_color=WHITE, corner_radius=0)
+        left_form.pack(fill="x")
+        left_form.grid_columnconfigure(0, weight=1)
+        left_row = 0
+        if account is not None:
+            ctk.CTkLabel(
+                left_form, text="Account ID", text_color=TEXT_BLUE,
+            ).grid(row=left_row * 2, column=0, sticky="w", padx=4, pady=(4, 2))
+            account_id_entry = ctk.CTkEntry(
+                left_form, corner_radius=8, fg_color="#e5e7eb",
+                text_color="#374151",
+            )
+            account_id_entry.grid(
+                row=left_row * 2 + 1, column=0, sticky="ew",
+                padx=4, pady=(0, 8),
+            )
+            account_id_entry.insert(0, str(account["account_id"]))
+            account_id_entry.configure(state="disabled")
+            left_row += 1
+        self.email = self._entry(
+            left_form, "Email", details.get("gmail", ""), left_row
+        )
+        left_row += 1
+        self.password = self._entry(
+            left_form, "Password" if account is None else "Password (optional)",
+            "", left_row, masked=True,
+        )
+        left_row += 1
+        self.role = self._combo(
+            left_form, "Role", ["Admin", "Student"],
+            details.get("role", "Student"),
+            left_row,
+        )
+        left_row += 1
+        self.status = self._combo(
+            left_form, "Status", ["Active", "Inactive"],
+            details.get("status", (account or {}).get("account_status", "Active")),
+            left_row,
+        )
+
+        ctk.CTkLabel(
+            right, text="Personal Information", text_color=TEXT_BLUE,
+            font=("Arial", 15, "bold"),
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        self.personal_entries = {}
+        for row, fields in enumerate(
+            (
+                (("first_name", "First Name"), ("middle_name", "Middle Name")),
+                (("last_name", "Last Name"), ("contact_number", "Contact No.")),
+                (("student_id", "Student No."),),
+            ),
+            1,
+        ):
+            for column, (key, label) in enumerate(fields):
+                self.personal_entries[key] = self._entry(
+                    right, label, details.get(key, ""), row, column
+                )
+            if len(fields) == 1:
+                self.personal_entries[key].grid_configure(columnspan=2)
+        self.birthday = self._date_entry(right, "Birthday", details.get("birthday"), 4)
+        self.gender = self._combo(
+            right, "Gender", ["Male", "Female", "Other"],
+            details.get("gender", ""), 4, 1,
+        )
+        self.department = self._combo(
+            right, "Department", list(self.department_data.keys()),
+            details.get("department", ""), 5, 0,
+            command=self.update_courses,
+        )
+        self.course = self._combo(
+            right, "Course", self.department_data.get(details.get("department", ""), []),
+            details.get("course", ""), 5, 1,
+        )
+        self.address = self._textbox(right, "Address", details.get("address", ""), 6)
+        ctk.CTkButton(
+            card, text="Create" if account is None else "Update", width=130,
+            height=38, fg_color=GREEN, text_color="black", corner_radius=8,
+            command=self.save,
+        ).grid(row=3, column=2, sticky="e", padx=28, pady=(0, 20))
+
+    @staticmethod
+    def _entry(parent, label, value="", row=0, column=0, masked=False):
+        ctk.CTkLabel(parent, text=label, text_color=TEXT_BLUE).grid(
+            row=row * 2, column=column, sticky="w", padx=4, pady=(4, 2)
+        )
+        entry = ctk.CTkEntry(
+            parent, corner_radius=8, fg_color="#f3f4f6",
+            text_color="black", show="*" if masked else "",
+        )
+        entry.grid(row=row * 2 + 1, column=column, sticky="ew", padx=4, pady=(0, 6))
+        entry.insert(0, value)
+        return entry
+
+    @staticmethod
+    def _combo(parent, label, values, value, row=0, column=0, command=None):
+        ctk.CTkLabel(parent, text=label, text_color=TEXT_BLUE).grid(
+            row=row * 2, column=column, sticky="w", padx=4, pady=(4, 2)
+        )
+        combo = ctk.CTkComboBox(
+            parent, values=values, corner_radius=8, fg_color="#f3f4f6",
+            text_color="black", button_color="#d1d5db", command=command,
+        )
+        combo.grid(row=row * 2 + 1, column=column, sticky="ew", padx=4, pady=(0, 6))
+        combo.set(value)
+        return combo
+
+    @staticmethod
+    def _date_entry(parent, label, value, row):
+        ctk.CTkLabel(parent, text=label, text_color=TEXT_BLUE).grid(
+            row=row * 2, column=0, sticky="w", padx=4, pady=(4, 2)
+        )
+        date_entry = DateEntry(
+            parent, date_pattern="yyyy-mm-dd", width=16,
+            background="#1e3a8a", foreground="white",
+            borderwidth=1, relief="solid",
+        )
+        date_entry.grid(row=row * 2 + 1, column=0, sticky="ew", padx=4, pady=(0, 6))
+        date_entry.delete(0, "end")
+        if value:
+            try:
+                date_entry.set_date(value)
+            except (TypeError, ValueError):
+                date_entry.insert(0, str(value)[:10])
+        return date_entry
+
+    @staticmethod
+    def _textbox(parent, label, value="", row=0):
+        ctk.CTkLabel(parent, text=label, text_color=TEXT_BLUE).grid(
+            row=row * 2, column=0, columnspan=2, sticky="w", padx=4, pady=(4, 2)
+        )
+        textbox = ctk.CTkTextbox(
+            parent, height=75, corner_radius=8,
+            fg_color="#f3f4f6", text_color="black",
+        )
+        textbox.grid(
+            row=row * 2 + 1, column=0, columnspan=2,
+            sticky="nsew", padx=4, pady=(0, 6),
+        )
+        textbox.insert("1.0", value or "")
+        return textbox
+
+    def update_courses(self, department=None):
+        selected = department or self.department.get()
+        courses = self.department_data.get(selected, [])
+        self.course.configure(values=courses)
+        if self.course.get() not in courses:
+            self.course.set(courses[0] if courses else "")
+
+    def save(self):
+        if not messagebox.askyesno(
+            "Confirm Changes",
+            "Are you sure you want to save these changes?",
+            parent=self.modal,
+        ):
+            return
+        try:
+            account_data = {
+                "gmail": self.email.get(),
+                "password": self.password.get(),
+                "role": self.role.get(),
+                "status": self.status.get(),
+            }
+            personal_data = {
+                key: entry.get() for key, entry in self.personal_entries.items()
+            }
+            personal_data["birthday"] = self.birthday.get_date()
+            personal_data["gender"] = self.gender.get()
+            personal_data["department"] = self.department.get()
+            personal_data["course"] = self.course.get()
+            personal_data["address"] = self.address.get("1.0", "end-1c")
+            if self.account is None:
+                validate_new_account(account_data, personal_data)
+                self.repository.add_user(account_data, personal_data)
+            else:
+                if account_data["password"].strip():
+                    validate_password(account_data["password"])
+                self.repository.update_user(
+                    self.account["account_id"], account_data, personal_data
+                )
+            self.modal.destroy()
+            self.on_changed()
+        except (ValueError, mysql.connector.Error) as error:
+            messagebox.showerror("Account Error", str(error), parent=self.modal)
+
+
+class AdminPasswordModal:
+    def __init__(self, parent, repository, account, on_changed=None):
+        self.repository = repository
+        self.account = account
+        self.on_changed = on_changed or (lambda: None)
+        self.modal = ctk.CTkToplevel(parent)
+        self.modal.title("Change Password")
+        self.modal.geometry("400x300")
+        self.modal.configure(fg_color=MODAL_BG)
+        self.modal.transient(parent)
+        self.modal.grab_set()
+        body = ctk.CTkFrame(self.modal, fg_color=MODAL_BG)
+        body.pack(fill="both", expand=True, padx=24, pady=24)
+        ctk.CTkLabel(body, text="Change Password", text_color=WHITE,
+                     font=MODAL_TITLE_FONT).pack(anchor="w", pady=(0, 10))
+        ctk.CTkLabel(body, text="New Password", text_color=WHITE).pack(anchor="w")
+        self.password = ctk.CTkEntry(body, show="*", corner_radius=6,
+                                     fg_color=WHITE, text_color="black")
+        self.password.pack(fill="x", pady=(2, 12))
+        ctk.CTkLabel(body, text="Re-enter Password", text_color=WHITE).pack(
+            anchor="w"
+        )
+        self.confirm_password = ctk.CTkEntry(
+            body, show="*", corner_radius=6, fg_color=WHITE, text_color="black"
+        )
+        self.confirm_password.pack(fill="x", pady=(2, 8))
+        self.show_password = ctk.CTkCheckBox(
+            body, text="Show Password", text_color=WHITE,
+            command=self.toggle_password_visibility,
+        )
+        self.show_password.pack(anchor="w", pady=(0, 12))
+        ctk.CTkButton(body, text="SAVE", height=36, fg_color=PURPLE,
+                      corner_radius=6, command=self.save).pack(fill="x")
+
+    def toggle_password_visibility(self):
+        show = "" if self.show_password.get() else "*"
+        self.password.configure(show=show)
+        self.confirm_password.configure(show=show)
+
+    def save(self):
+        if not messagebox.askyesno(
+            "Confirm Changes",
+            "Are you sure you want to save these changes?",
+            parent=self.modal,
+        ):
+            return
+        try:
+            if self.password.get() != self.confirm_password.get():
+                raise ValueError("The passwords do not match.")
+            validate_password(self.password.get())
+            self.repository.change_password(self.account["account_id"], self.password.get())
+            self.modal.destroy()
+            self.on_changed()
+        except (ValueError, mysql.connector.Error) as error:
+            messagebox.showerror("Password Error", str(error), parent=self.modal)
+
+
+def create_accounts_tab(parent_frame):
+    repository = UserRepository()
+    frame = ctk.CTkFrame(parent_frame, fg_color=BG_BLUE, corner_radius=0)
+    frame.pack(fill="both", expand=True)
+    state = {"mode": "current", "selected": None, "widgets": []}
+    header = ctk.CTkFrame(frame, height=45, fg_color="#1c3b7a", corner_radius=8)
+    header.pack(fill="x", padx=20, pady=(20, 0))
+    header.pack_propagate(False)
+    ctk.CTkLabel(header, text="Accounts", text_color=WHITE,
+                 font=("Arial", 16, "bold")).pack(side="left", padx=15)
+    toggle = ctk.CTkButton(header, text="ARCHIVE", width=90, height=30,
+                           fg_color="#1c3b7a", corner_radius=6)
+    toggle.pack(side="left", padx=10)
+    toolbar = ctk.CTkFrame(header, fg_color="transparent")
+    toolbar.pack(side="right", padx=20)
+    search = ctk.CTkEntry(toolbar, width=160, height=30, fg_color=WHITE,
+                          text_color="black", corner_radius=6, placeholder_text="Search")
+    search.pack(side="left", padx=5)
+    header_frame = ctk.CTkFrame(frame, fg_color="#dbeafe", corner_radius=8)
+    header_frame.pack(fill="x", padx=20, pady=(20, 0))
+    table = ctk.CTkScrollableFrame(frame, fg_color=WHITE, corner_radius=8)
+    table.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+
+    def configure_columns(container, count):
+        for column in range(count):
+            container.grid_columnconfigure(
+                column, weight=1, uniform="col", minsize=0
+            )
+
+    def select(row, widgets):
+        for widget in state["widgets"]:
+            widget.configure(fg_color=WHITE)
+        state["selected"], state["widgets"] = row, widgets
+        for widget in widgets:
+            widget.configure(fg_color="#bfdbfe")
+
+    def load_rows():
+        for widget in table.winfo_children():
+            widget.destroy()
+        state["selected"], state["widgets"] = None, []
+        archived = state["mode"] == "archived"
+        headers = (
+            ["Acc_Archive No.", "Account No.", "Student ID", "Email",
+             "Status", "Role", "Date/Time"]
+            if archived else
+            ["Account No.", "Student ID", "Email", "Status", "Role", "Date/Time"]
+        )
+        for widget in header_frame.winfo_children():
+            widget.destroy()
+        configure_columns(header_frame, len(headers))
+        for column, title in enumerate(headers):
+            ctk.CTkLabel(header_frame, text=title, fg_color="#dbeafe", text_color=TEXT_BLUE,
+                         font=("Arial", 11, "bold"), anchor="w").grid(
+                             row=0, column=column, sticky="nsew", padx=1, pady=6)
+        configure_columns(table, len(headers))
+        try:
+            rows = repository.get_all_accounts(state["mode"])
+        except (ValueError, mysql.connector.Error) as error:
+            messagebox.showerror("Accounts Unavailable", str(error), parent=app)
+            return
+        term = search.get().strip().lower()
+        for row_index, row in enumerate(rows, 1):
+            values = (
+                [row.get("account_archive_id"), row.get("account_id"),
+                 row.get("student_id"), row.get("gmail"), row.get("account_status"),
+                 row.get("role"), row.get("creationdate")]
+                if archived else
+                [row.get("account_id"), row.get("student_id"), row.get("gmail"),
+                 row.get("account_status"), row.get("role"), row.get("creationdate")]
+            )
+            if term and term not in " ".join(str(value or "") for value in values).lower():
+                continue
+            widgets = []
+            for column, value in enumerate(values):
+                label = ctk.CTkLabel(table, text=str(value or ""), fg_color=WHITE,
+                                     text_color="black", anchor="w")
+                label.grid(row=row_index, column=column, sticky="ew", padx=1, pady=1)
+                label.bind("<Button-1>",
+                           lambda _event=None, item=row, cells=widgets: select(item, cells))
+                widgets.append(label)
+
+    def selected():
+        if state["selected"] is None:
+            messagebox.showwarning("Select Account", "Select an account first.", parent=app)
+        return state["selected"]
+
+    def refresh():
+        load_rows()
+
+    def switch():
+        state["mode"] = "archived" if state["mode"] == "current" else "current"
+        toggle.configure(text="CURRENT" if state["mode"] == "archived" else "ARCHIVE")
+        update_actions()
+        load_rows()
+
+    toggle.configure(command=switch)
+    search.bind("<KeyRelease>", lambda _event=None: load_rows())
+    actions = ctk.CTkFrame(frame, fg_color="transparent")
+    actions.pack(fill="x", padx=20, pady=(0, 20))
+    current = [
+        ctk.CTkButton(actions, text="CREATE", fg_color=GREEN, text_color="black",
+                      corner_radius=6, command=lambda: AccountEditor(app, repository, on_changed=refresh)),
+        ctk.CTkButton(actions, text="UPDATE", fg_color="#f59e0b", text_color="black",
+                      corner_radius=6, command=lambda: edit()),
+        ctk.CTkButton(actions, text="CHANGE PASSWORD", fg_color=PURPLE,
+                      corner_radius=6, command=lambda: reset()),
+        ctk.CTkButton(actions, text="ARCHIVE", fg_color=RED, corner_radius=6,
+                      command=lambda: archive()),
+    ]
+    restore = ctk.CTkButton(actions, text="RESTORE", fg_color=GREEN, text_color="black",
+                            corner_radius=6, command=lambda: move(repository.restore_user))
+    delete = ctk.CTkButton(actions, text="DELETE", fg_color=RED, corner_radius=6,
+                           command=lambda: move(repository.delete_archived))
+
+    def edit():
+        account = selected()
+        if account:
+            AccountEditor(app, repository, account, refresh)
+
+    def reset():
+        account = selected()
+        if account:
+            AdminPasswordModal(app, repository, account, refresh)
+
+    def archive():
+        account = selected()
+        if account and messagebox.askyesno("Archive Account", "Archive this account?", parent=app):
+            try:
+                repository.archive_user(account["account_id"])
+                refresh()
+            except (ValueError, mysql.connector.Error) as error:
+                messagebox.showerror("Archive Account", str(error), parent=app)
+
+    def move(action):
+        account = selected()
+        if account and messagebox.askyesno("Confirm Account Deletion", "Permanently delete this account?", parent=app):
+            action(account.get("account_archive_id"))
+            refresh()
+
+    def update_actions():
+        for button in current + [restore, delete]:
+            button.pack_forget()
+        if state["mode"] == "current":
+            for button in current:
+                button.pack(side="left", padx=4)
+        else:
+            restore.pack(side="right")
+            delete.pack(side="right", padx=(0, 8))
+
+    update_actions()
+    load_rows()
+    return frame
+
+
+accounts_frame = create_accounts_tab(main_bg)
+accounts_frame.pack_forget()
+
+
+class LogoutConfirmationModal:
+    """Modal for confirming logout action."""
+
+    def __init__(self, parent):
+        self.modal = ctk.CTkToplevel(parent)
+        self.modal.title("Confirm Logout")
+        self.modal.geometry("450x200")
+        self.modal.configure(fg_color=MODAL_BG)
+        self.modal.transient(parent)
+        self.modal.grab_set()
+        self.modal.protocol("WM_DELETE_WINDOW", self.modal.destroy)
+
+        self.modal.update_idletasks()
+        x = (self.modal.winfo_screenwidth() // 2) - 225
+        y = (self.modal.winfo_screenheight() // 2) - 125
+        self.modal.geometry(f"+{x}+{y}")
+
+        body = ctk.CTkFrame(self.modal, fg_color=MODAL_BG)
+        body.pack(fill="both", expand=True, padx=24, pady=(24, 20))
+
+        ctk.CTkLabel(
+            body,
+            text="Log Out",
+            text_color=WHITE,
+            font=MODAL_TITLE_FONT,
+        ).pack(anchor="w", pady=(0, 10))
+
+        ctk.CTkLabel(
+            body,
+            text="Are you sure you want to log out?",
+            text_color="#bfdbfe",
+            font=MODAL_FONT,
+        ).pack(anchor="w", pady=(0, 20))
+
+        actions = ctk.CTkFrame(body, fg_color="transparent")
+        actions.pack(fill="x", pady=(20, 0))
+        actions.grid_columnconfigure((0, 1), weight=1, uniform="action")
+
+        ctk.CTkButton(
+            actions,
+            text="No",
+            width=120,
+            height=40,
+            command=self.modal.destroy,
+            fg_color=RED,
+            hover_color="#dc2626",
+            corner_radius=8,
+            font=("Arial", 12, "bold"),
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 10))
+
+        ctk.CTkButton(
+            actions,
+            text="Yes",
+            width=120,
+            height=40,
+            command=self._confirm_logout,
+            fg_color=GREEN,
+            hover_color="#65a30d",
+            text_color="black",
+            corner_radius=8,
+            font=("Arial", 12, "bold"),
+        ).grid(row=0, column=1, sticky="ew", padx=(10, 0))
+
+    def _confirm_logout(self):
+        self.modal.destroy()
+        Session.clear()
+        app.destroy()
+        subprocess.Popen([
+            sys.executable,
+            os.path.join(os.path.dirname(__file__), "main.py"),
+        ])
+
+
 def show_tab(selected_tab):
     if selected_tab == "Analytics":
         inventory_frame.pack_forget()
-        content_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        requests_frame.pack_forget()
+        transactions_frame.pack_forget()
+        accounts_frame.pack_forget()
+        content_frame.pack(fill="both", expand=True, padx=20, pady=20)
     elif selected_tab == "Inventory Managemt":
         content_frame.pack_forget()
-        inventory_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        requests_frame.pack_forget()
+        transactions_frame.pack_forget()
+        accounts_frame.pack_forget()
+        inventory_frame.pack(fill="both", expand=True, padx=20, pady=20)
+    elif selected_tab == "Requests":
+        content_frame.pack_forget()
+        inventory_frame.pack_forget()
+        transactions_frame.pack_forget()
+        accounts_frame.pack_forget()
+        requests_frame.pack(fill="both", expand=True, padx=20, pady=20)
+    elif selected_tab == "Transactions":
+        content_frame.pack_forget()
+        inventory_frame.pack_forget()
+        requests_frame.pack_forget()
+        accounts_frame.pack_forget()
+        transactions_frame.pack(fill="both", expand=True, padx=20, pady=20)
+    elif selected_tab == "Accounts":
+        content_frame.pack_forget()
+        inventory_frame.pack_forget()
+        requests_frame.pack_forget()
+        transactions_frame.pack_forget()
+        accounts_frame.pack(fill="both", expand=True, padx=20, pady=20)
     else:
         messagebox.showinfo(
             "Unavailable",
@@ -961,6 +2179,5 @@ def show_tab(selected_tab):
 
     for tab, button in nav_buttons.items():
         button.configure(fg_color=DARK_BLUE if tab == selected_tab else TEXT_BLUE)
-
 
 app.mainloop()

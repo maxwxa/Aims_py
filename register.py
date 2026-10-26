@@ -10,6 +10,10 @@ from PIL import Image
 from tkcalendar import DateEntry
 
 from models.password_utils import hash_password
+from models.account_validation import (
+    validate_contact_number, validate_email, validate_password,
+    validate_student_number,
+)
 
 app = ctk.CTk()
 app.geometry("900x550")
@@ -23,7 +27,6 @@ WHITE = "#ffffff"
 CARD_GRAY = "#f3f4f6"
 BORDER_GRAY = "#d1d5db"
 
-# --- Department Data Dictionary ---
 department_data = {
     "College of Arts & Sciences": [
         "ABCom - Bachelor of Arts in Communication",
@@ -94,9 +97,6 @@ form_frame.place(relx=0.5, y=80, anchor="n")
 
 ctk.CTkFrame(form_frame, width=2, height=336, fg_color="black").place(x=220, y=2)
 
-# ==========================================
-# LEFT SECTION: Account Information
-# ==========================================
 left_section = ctk.CTkFrame(form_frame, width=216, height=336, fg_color=CARD_GRAY, corner_radius=0)
 left_section.place(x=2, y=2)
 
@@ -127,9 +127,6 @@ try:
 except Exception as e:
     pass
 
-# ==========================================
-# RIGHT SECTION: Personal Information
-# ==========================================
 right_section = ctk.CTkFrame(form_frame, width=494, height=336, fg_color=CARD_GRAY, corner_radius=0)
 right_section.place(x=224, y=2)
 
@@ -230,8 +227,19 @@ def register_user():
     course = course_combo.get()
     address = address_textbox.get("1.0", "end-1c")
 
-    if not email or not password or not fname or not lname or not student_no:
-        messagebox.showwarning("Validation Error", "Email, Password, First Name, Last Name, and Student No. are required.")
+    if not email or not password or not fname or not lname or not student_no or not course:
+        messagebox.showwarning(
+            "Validation Error",
+            "Email, Password, First Name, Last Name, Student No., and Course are required.",
+        )
+        return
+    try:
+        validate_email(email)
+        validate_student_number(student_no)
+        validate_contact_number(contact)
+        validate_password(password)
+    except ValueError as error:
+        messagebox.showerror("Validation Error", str(error))
         return
 
     try:

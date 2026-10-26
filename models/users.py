@@ -1,28 +1,38 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
-import json
-from pathlib import Path
+import os
 from typing import List
 
-SESSION_PATH = Path(__file__).resolve().parent.parent / "session.json"
-
-
 class Session:
+    _current_user = {}
+    _session_keys = ("AIMS_USER_ID", "AIMS_USER_GMAIL", "AIMS_USER_ROLE")
+
     @staticmethod
     def save(user_id: int, gmail: str, role: str) -> None:
-        session_data = {"user_id": user_id, "gmail": gmail, "role": role}
-        SESSION_PATH.write_text(json.dumps(session_data), encoding="utf-8")
+        Session._current_user = {"user_id": user_id, "gmail": gmail, "role": role}
+        os.environ["AIMS_USER_ID"] = str(user_id)
+        os.environ["AIMS_USER_GMAIL"] = gmail
+        os.environ["AIMS_USER_ROLE"] = role
 
     @staticmethod
     def load() -> dict:
-        try:
-            return json.loads(SESSION_PATH.read_text(encoding="utf-8"))
-        except (FileNotFoundError, json.JSONDecodeError):
-            return {}
+        if not Session._current_user:
+            user_id = os.environ.get("AIMS_USER_ID")
+            gmail = os.environ.get("AIMS_USER_GMAIL")
+            role = os.environ.get("AIMS_USER_ROLE")
+            if user_id and gmail and role:
+                Session._current_user = {
+                    "user_id": int(user_id),
+                    "gmail": gmail,
+                    "role": role,
+                }
+        return dict(Session._current_user)
 
     @staticmethod
     def clear() -> None:
-        SESSION_PATH.unlink(missing_ok=True)
+        Session._current_user = {}
+        for key in Session._session_keys:
+            os.environ.pop(key, None)
 
 
 class UserAccount(ABC):
