@@ -1313,16 +1313,19 @@ class RequestModal:
 
         actions = ctk.CTkFrame(details, fg_color="transparent")
         actions.pack(fill="x", pady=(5, 8))
-        for column in range(3):
+        for column in range(4):
             actions.grid_columnconfigure(column, weight=1, uniform="request_action")
         ctk.CTkButton(actions, text="UPDATE", height=35, fg_color="#f59e0b",
                       text_color="black", corner_radius=6,
-                      command=self.save_edits).grid(row=0, column=0, sticky="ew", padx=3)
+                      command=self.save_edits).grid(row=0, column=0, sticky="ew", padx=2)
+        ctk.CTkButton(actions, text="CANCEL", height=35, fg_color="#dc2626",
+                      text_color="white", corner_radius=6,
+                      command=self._show_cancel_modal).grid(row=0, column=1, sticky="ew", padx=2)
         ctk.CTkButton(actions, text="DELETE", height=35, fg_color=RED,
-                      corner_radius=6, command=self.delete).grid(row=0, column=1, sticky="ew", padx=3)
+                      corner_radius=6, command=self.delete).grid(row=0, column=2, sticky="ew", padx=2)
         ctk.CTkButton(actions, text="NOTIFY", height=35, fg_color=PURPLE,
                       corner_radius=6, command=lambda: NotifyModal(self.modal, request, repository)
-                      ).grid(row=0, column=2, sticky="ew", padx=3)
+                      ).grid(row=0, column=3, sticky="ew", padx=2)
     
     def _update_confirm_button(self):
         labels = {
@@ -1338,12 +1341,84 @@ class RequestModal:
     def save_edits(self):
         try:
             self.request["quantity"] = int(self.quantity.get())
-            self.request["request_status"] = self.status.get()
+            new_status = self.status.get()
+            if new_status == "Cancelled" and self.request.get("request_status") != "Cancelled":
+                self._show_cancel_modal()
+                return
+            self.request["request_status"] = new_status
             self.repository.update(self.request)
             self.on_changed()
             messagebox.showinfo("Request Updated", "Request details were updated.", parent=self.modal)
         except (ValueError, mysql.connector.Error) as error:
             messagebox.showerror("Request Error", str(error), parent=self.modal)
+
+    def _show_cancel_modal(self):
+        cancel_modal = ctk.CTkToplevel(self.modal)
+        cancel_modal.title("Cancel Item Request")
+        cancel_modal.geometry("480x280")
+        cancel_modal.resizable(False, False)
+        cancel_modal.configure(fg_color=MODAL_BG)
+        cancel_modal.transient(self.modal)
+        cancel_modal.grab_set()
+
+        body = ctk.CTkFrame(cancel_modal, fg_color=MODAL_BG)
+        body.pack(fill="both", expand=True, padx=24, pady=24)
+        ctk.CTkLabel(
+            body, text="Cancel Item Request", text_color=WHITE,
+            font=MODAL_TITLE_FONT,
+        ).pack(anchor="w", pady=(0, 10))
+
+        ctk.CTkLabel(
+            body, text="Cancellation Reason:", text_color=WHITE,
+            font=MODAL_FONT,
+        ).pack(anchor="w", pady=(0, 4))
+        reason_box = ctk.CTkTextbox(
+            body, height=80, fg_color=WHITE, text_color="black", corner_radius=8,
+        )
+        reason_box.pack(fill="x", pady=(0, 16))
+
+        def submit_cancel():
+            reason_text = reason_box.get("1.0", "end-1c").strip()
+            if not reason_text:
+                messagebox.showwarning(
+                    "Validation", "Cancellation reason is required.", parent=cancel_modal
+                )
+                return
+            if not messagebox.askyesno(
+                "Cancel Request",
+                f"Cancel this item request with reason:\n\n'{reason_text}'?",
+                parent=cancel_modal,
+            ):
+                return
+            try:
+                changed = self.repository.cancel(
+                    self.request["request_id"],
+                    reason=reason_text,
+                )
+                if not changed:
+                    raise ValueError("The request could not be cancelled.")
+                cancel_modal.destroy()
+                self.modal.destroy()
+                self.on_changed()
+                messagebox.showinfo(
+                    "Request Cancelled",
+                    "The item request has been cancelled and logged into transactions.",
+                    parent=app,
+                )
+            except (ValueError, mysql.connector.Error) as error:
+                messagebox.showerror("Cancellation Error", str(error), parent=cancel_modal)
+
+        btn_row = ctk.CTkFrame(body, fg_color="transparent")
+        btn_row.pack(fill="x")
+        btn_row.grid_columnconfigure((0, 1), weight=1, uniform="cancel_btn")
+        ctk.CTkButton(
+            btn_row, text="Back", height=36, fg_color=TEXT_BLUE, corner_radius=8,
+            command=cancel_modal.destroy,
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        ctk.CTkButton(
+            btn_row, text="Confirm Cancel", height=36, fg_color=RED, corner_radius=8,
+            command=submit_cancel,
+        ).grid(row=0, column=1, sticky="ew", padx=(5, 0))
 
     def delete(self):
         if not messagebox.askyesno("Delete Request", "Delete this request?", parent=self.modal):
@@ -1593,6 +1668,11 @@ def create_transactions_tab(parent_frame):
             if term and term not in text:
                 continue
             date_value = row.get("transaction_date")
+            is_cancelled = (
+                str(row.get("transaction_type", "")).strip().lower() == "cancelled"
+                or str(row.get("request_status", "")).strip().lower() == "cancelled"
+            )
+            received_by = "N/A" if is_cancelled else (row.get("requester_name") or row.get("confirmed_by_name") or "N/A")
             values = [
                 f"TRX-{row['transaction_id']}",
                 f"REQ-{row['request_id']}",
@@ -1600,7 +1680,7 @@ def create_transactions_tab(parent_frame):
                 f"x{row.get('quantity', 0)}",
                 row.get("request_status", ""),
                 row.get("approved_by_name") or "N/A",
-                row.get("confirmed_by_name") or "N/A",
+                received_by,
                 date_value.strftime("%Y-%m-%d %H:%M") if date_value else "",
             ]
             widgets = []

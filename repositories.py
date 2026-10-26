@@ -999,7 +999,7 @@ class RequestRepository(BaseRepository):
         cursor = conn.cursor(dictionary=True)
         try:
             cursor.execute(
-                """SELECT requester_id, request_status, item_id
+                """SELECT requester_id, request_status, item_id, quantity
                    FROM item_requests WHERE request_id=%s""",
                 (_id,),
             )
@@ -1008,40 +1008,74 @@ class RequestRepository(BaseRepository):
                 return False
             if request["request_status"] == "Approved" and not reason.strip():
                 raise ValueError("A cancellation reason is required after acceptance.")
+            user_session = Session.load()
+            current_user_id = user_session.get("user_id") if user_session else None
             cursor.execute(
                 """UPDATE item_requests
                    SET request_status='Cancelled', processed_by=%s
-                   WHERE request_id=%s AND requester_id=%s
-                     AND request_status IN ('Pending', 'Approved')""",
-                (Session.load().get("user_id"), _id, request["requester_id"]),
+                   WHERE request_id=%s
+                     AND request_status IN ('Pending', 'Approved', 'Active', 'Return Requested')""",
+                (current_user_id, _id),
             )
             if cursor.rowcount != 1:
                 conn.rollback()
                 return False
-            if reason.strip():
+
+            if request.get("request_status") == "Active":
+                InventoryRepository().adjust_stock(request["item_id"], request["quantity"], conn)
+
+            cancellation_reason = reason.strip() if reason and reason.strip() else "Cancelled"
+            cursor.execute(
+    """INSERT INTO transactions 
+       (request_id, transaction_type, transaction_date, quantity, 
+        conditon_status, condition_notes, handled_by) 
+       VALUES (%s, 'Cancelled', NOW(), %s, NULL, %s, %s)""",
+    (_id, request["quantity"], cancellation_reason, current_user_id)
+)
+
+            cursor.execute(
+                "SELECT item_name FROM inventory_items WHERE item_id=%s",
+                (request["item_id"],),
+            )
+            item = cursor.fetchone()
+            item_name = item["item_name"] if item else "an item"
+
+            cursor.execute(
+                "SELECT role FROM user_account WHERE user_id=%s",
+                (current_user_id,),
+            )
+            user_row = cursor.fetchone()
+            is_admin = bool(user_row and str(user_row.get("role", "")).lower() == "admin")
+
+            if is_admin:
                 cursor.execute(
-                    """SELECT user_id FROM user_account
-                       WHERE LOWER(role)='admin' AND status='Active'"""
+                    """INSERT INTO notifications
+                       (user_id, notif_message, notif_type, notif_isread, notif_create)
+                       VALUES (%s, %s, 'Admin', 0, NOW())""",
+                    (
+                        request["requester_id"],
+                        f"Your request for '{item_name}' was cancelled. Reason: {cancellation_reason}",
+                    ),
                 )
-                admins = cursor.fetchall()
-                cursor.execute(
-                    "SELECT item_name FROM inventory_items WHERE item_id=%s",
-                    (request["item_id"],),
-                )
-                item = cursor.fetchone()
-                item_name = item["item_name"] if item else "an item"
-                for admin in admins:
+            else:
+                if reason.strip():
                     cursor.execute(
-                        """INSERT INTO notifications
-                           (user_id, notif_message, notif_type, notif_isread, notif_create)
-                           VALUES (%s, %s, 'System', 0, NOW())""",
-                        (
-                            admin["user_id"],
-                            f"Student cancelled '{item_name}'. Reason: {reason.strip()}",
-                        ),
+                        """SELECT user_id FROM user_account
+                           WHERE LOWER(role)='admin' AND status='Active'"""
                     )
+                    admins = cursor.fetchall()
+                    for admin in admins:
+                        cursor.execute(
+                            """INSERT INTO notifications
+                               (user_id, notif_message, notif_type, notif_isread, notif_create)
+                               VALUES (%s, %s, 'System', 0, NOW())""",
+                            (
+                                admin["user_id"],
+                                f"Student cancelled '{item_name}'. Reason: {reason.strip()}",
+                            ),
+                        )
             conn.commit()
-            _log_action("UPDATE", "item_requests", _id)
+            _log_action("UPDATE", "item_requests/transactions", _id)
             return True
         except Exception:
             conn.rollback()
@@ -1401,18 +1435,54 @@ class TransactionRepository(BaseRepository):
         conn = self._db.get_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
-            """SELECT t.transaction_id, ii.item_name, t.transaction_type,
-                      t.quantity, t.transaction_date
+            """SELECT t.transaction_id, t.request_id, t.transaction_type,
+                      t.quantity, t.conditon_status AS condition_status,
+                      t.condition_notes, t.handled_by, t.transaction_date,
+                      ir.requester_id, ir.item_id, ir.quantity AS requested_quantity,
+                      ir.request_status, ir.request_date, ir.due_date,
+                      ir.processed_by, ir.approved_by, ir.confirmed_by,
+                      ii.item_name, ii.item_code, ii.description AS item_description,
+                      ii.stock, ii.serial_no, ii.unit,
+                      CONCAT_WS(' ', requester_pi.first_name, requester_pi.middle_name,
+                                requester_pi.last_name) AS requester_name,
+                      CONCAT_WS(' ', approved_pi.first_name, approved_pi.middle_name,
+                                approved_pi.last_name) AS approved_by_name,
+                      CONCAT_WS(' ', confirmed_pi.first_name, confirmed_pi.middle_name,
+                                confirmed_pi.last_name) AS confirmed_by_name,
+                      CONCAT_WS(' ', handled_pi.first_name, handled_pi.middle_name,
+                                handled_pi.last_name) AS handled_by_name
                FROM transactions t
                JOIN item_requests ir ON ir.request_id=t.request_id
                JOIN inventory_items ii ON ii.item_id=ir.item_id
+               LEFT JOIN personal_info requester_pi ON requester_pi.user_id=ir.requester_id
+               LEFT JOIN personal_info approved_pi ON approved_pi.user_id=ir.approved_by
+               LEFT JOIN personal_info confirmed_pi ON confirmed_pi.user_id=ir.confirmed_by
+               LEFT JOIN personal_info handled_pi ON handled_pi.user_id=t.handled_by
                WHERE ir.requester_id=%s
                UNION ALL
-               SELECT ta.arc_transaction_id AS transaction_id, ii.item_name,
-                      ta.transaction_type, ta.quantity, ta.transaction_date
+               SELECT ta.arc_transaction_id AS transaction_id, ta.request_id, ta.transaction_type,
+                      ta.quantity, ta.conditon_status AS condition_status,
+                      ta.condition_notes, ta.handled_by, ta.transaction_date,
+                      ir.requester_id, ir.item_id, ir.quantity AS requested_quantity,
+                      ir.request_status, ir.request_date, ir.due_date,
+                      ir.processed_by, ir.approved_by, ir.confirmed_by,
+                      ii.item_name, ii.item_code, ii.description AS item_description,
+                      ii.stock, ii.serial_no, ii.unit,
+                      CONCAT_WS(' ', requester_pi.first_name, requester_pi.middle_name,
+                                requester_pi.last_name) AS requester_name,
+                      CONCAT_WS(' ', approved_pi.first_name, approved_pi.middle_name,
+                                approved_pi.last_name) AS approved_by_name,
+                      CONCAT_WS(' ', confirmed_pi.first_name, confirmed_pi.middle_name,
+                                confirmed_pi.last_name) AS confirmed_by_name,
+                      CONCAT_WS(' ', handled_pi.first_name, handled_pi.middle_name,
+                                handled_pi.last_name) AS handled_by_name
                FROM transactions_archive ta
                JOIN item_requests ir ON ir.request_id=ta.request_id
                JOIN inventory_items ii ON ii.item_id=ir.item_id
+               LEFT JOIN personal_info requester_pi ON requester_pi.user_id=ir.requester_id
+               LEFT JOIN personal_info approved_pi ON approved_pi.user_id=ir.approved_by
+               LEFT JOIN personal_info confirmed_pi ON confirmed_pi.user_id=ir.confirmed_by
+               LEFT JOIN personal_info handled_pi ON handled_pi.user_id=ta.handled_by
                WHERE ir.requester_id=%s
                ORDER BY transaction_date DESC""",
             (user_id, user_id),

@@ -478,11 +478,18 @@ class UserDashboard:
         rows_frame.pack(fill="both", expand=True, padx=10)
         for index, width in enumerate(column_widths):
             rows_frame.grid_columnconfigure(index, weight=width)
-        try:
-            rows = TransactionRepository().get_user_history(current_user["user_id"])
-        except mysql.connector.Error as error:
-            messagebox.showerror("History Unavailable", str(error), parent=app)
-            rows = []
+
+        rows = []
+
+        def fetch_and_render_rows(*_args):
+            nonlocal rows
+            try:
+                rows = TransactionRepository().get_user_history(current_user["user_id"])
+            except mysql.connector.Error as error:
+                messagebox.showerror("History Unavailable", str(error), parent=app)
+                rows = []
+            render_rows()
+
         def render_rows(*_args):
             for widget in rows_frame.winfo_children():
                 widget.destroy()
@@ -501,11 +508,16 @@ class UserDashboard:
                           sticky="ew", pady=5)
                 date_value = row.get("transaction_date")
                 date_text = date_value.strftime("%Y-%m-%d %H:%M") if date_value else ""
+                is_cancelled = (
+                    str(row.get("transaction_type", "")).strip().lower() == "cancelled"
+                    or str(row.get("request_status", "")).strip().lower() == "cancelled"
+                )
+                received_by = "N/A" if is_cancelled else (row.get("confirmed_by_name") or row.get("requester_name") or "N/A")
                 values = [
                     row.get("transaction_id", ""), row.get("item_name", ""),
                     row.get("transaction_type", ""), row.get("quantity", ""),
                     row.get("approved_by_name") or "N/A",
-                    row.get("confirmed_by_name") or "N/A",
+                    received_by,
                     date_text,
                 ]
                 for index, value in enumerate(values):
@@ -533,10 +545,26 @@ class UserDashboard:
             toolbar, text="Search", width=70, height=30, corner_radius=6,
             fg_color=BLUE, hover_color="#1e40af", command=render_rows,
         ).pack(side="left", padx=5)
-        render_rows()
+        ctk.CTkButton(
+            toolbar, text="Refresh", width=80, height=30, corner_radius=6,
+            fg_color=WHITE, text_color=DARK_BLUE, hover_color="#dbeafe",
+            command=fetch_and_render_rows,
+        ).pack(side="left", padx=5)
+        fetch_and_render_rows()
         return frame
 
     def _show_transaction_details_modal(self, transaction):
+        transaction_id = transaction.get("transaction_id")
+        if transaction_id:
+            try:
+                full_details = TransactionRepository().get_details(transaction_id, mode="current")
+                if not full_details:
+                    full_details = TransactionRepository().get_details(transaction_id, mode="archived")
+                if full_details:
+                    transaction = full_details
+            except Exception:
+                pass
+
         modal = ctk.CTkToplevel(app)
         modal.title("Transaction Details")
         modal.geometry("600x560")
@@ -553,23 +581,36 @@ class UserDashboard:
         ).pack(anchor="w", pady=(0, 12))
 
         date_value = transaction.get("transaction_date")
+        date_text = date_value.strftime("%Y-%m-%d %H:%M") if hasattr(date_value, "strftime") else (date_value or "N/A")
         request_date = transaction.get("request_date")
+        request_date_text = request_date.strftime("%Y-%m-%d %H:%M") if hasattr(request_date, "strftime") else (request_date or "N/A")
         due_date = transaction.get("due_date")
+        due_date_text = due_date.strftime("%Y-%m-%d %H:%M") if hasattr(due_date, "strftime") else (due_date or "Not applicable")
+
+        is_cancelled = (
+            str(transaction.get("transaction_type", "")).strip().lower() == "cancelled"
+            or str(transaction.get("request_status", "")).strip().lower() == "cancelled"
+        )
+        condition_label = "Cancellation Reason" if is_cancelled else "Condition Status"
+        received_by = "N/A" if is_cancelled else (transaction.get("confirmed_by_name") or transaction.get("requester_name") or "N/A")
+
         details = [
             ("Transaction ID", f"TRX-{transaction.get('transaction_id', 'N/A')}"),
             ("Request ID", f"REQ-{transaction.get('request_id', 'N/A')}"),
             ("Item ID", transaction.get("item_id", "N/A")),
             ("Item Name", transaction.get("item_name", "N/A")),
             ("Item Code", transaction.get("item_code", "N/A")),
+            ("Serial No.", transaction.get("serial_no") or "N/A"),
+            ("Unit", transaction.get("unit") or "N/A"),
             ("Transaction Type", transaction.get("transaction_type", "N/A")),
             ("Quantity", transaction.get("quantity", "N/A")),
             ("Request Status", transaction.get("request_status", "N/A")),
             ("Approved By", transaction.get("approved_by_name") or "N/A"),
-            ("Received By", transaction.get("confirmed_by_name") or "N/A"),
-            ("Request Date", request_date or "N/A"),
-            ("Due Date", due_date or "Not applicable"),
-            ("Transaction Date", date_value or "N/A"),
-            ("Condition Status", transaction.get("condition_status") or "N/A"),
+            ("Received By", received_by),
+            ("Request Date", request_date_text),
+            ("Due Date", due_date_text),
+            ("Transaction Date", date_text),
+            (condition_label, transaction.get("condition_status") or "N/A"),
         ]
         for label, value in details:
             ctk.CTkLabel(
