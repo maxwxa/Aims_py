@@ -312,9 +312,28 @@ def create_inventory_tab_v2(parent_frame):
     header.pack_propagate(False)
     ctk.CTkLabel(header, text="Items Catalogue", font=("Arial", 14, "bold"),
                  text_color=WHITE).pack(side="left", padx=15)
-    search = ctk.CTkEntry(header, width=150, fg_color=WHITE, text_color="black")
-    search.pack(side="right", padx=15, pady=8)
-    ctk.CTkLabel(header, text="Search:", text_color=WHITE).pack(side="right")
+    toolbar = ctk.CTkFrame(header, fg_color="transparent")
+    toolbar.pack(side="right", padx=20)
+    refresh_button = ctk.CTkButton(
+        toolbar, text="Refresh", width=80, height=30, fg_color=WHITE,
+        text_color="#1c3b7a", hover_color="#e5e7eb", corner_radius=6,
+        command=lambda: refresh_inventory(),
+    )
+    refresh_button.pack(side="left", padx=5)
+    filter_combo = ctk.CTkComboBox(
+        toolbar, width=120, height=30, values=["All"],
+        fg_color=WHITE, text_color="black", button_color=WHITE, corner_radius=6,
+        command=lambda _val=None: load_inventory_cards(),
+    )
+    filter_combo.set("All")
+    filter_combo.pack(side="left", padx=5)
+    filter_combo.bind("<<ComboboxSelected>>", lambda _event=None: load_inventory_cards())
+    search = ctk.CTkEntry(
+        toolbar, width=150, height=30, fg_color=WHITE, text_color="black",
+        corner_radius=6, placeholder_text="Search",
+    )
+    search.pack(side="left", padx=5)
+    search.bind("<KeyRelease>", lambda _event=None: load_inventory_cards())
     cards = ctk.CTkScrollableFrame(inventory_frame, fg_color=WHITE, corner_radius=8)
     cards.pack(fill="both", expand=True, padx=20, pady=20)
     cards.grid_columnconfigure((0, 1, 2), weight=1)
@@ -921,11 +940,28 @@ def create_inventory_tab_v2(parent_frame):
         if item:
             item_form(item=item, manage=True)
 
+    def load_categories_filter():
+        try:
+            categories = category_repo.get_all()
+            values = ["All"] + [category.category_name for category in categories]
+            filter_combo.configure(values=values)
+            if filter_combo.get() not in values:
+                filter_combo.set("All")
+        except (ValueError, mysql.connector.Error):
+            pass
+
+    def refresh_inventory():
+        load_categories_filter()
+        load_inventory_cards()
+
     def load_inventory_cards():
         for widget in cards.winfo_children():
             widget.destroy()
         try:
             items = inventory_repo.get_all(search_term=search.get())
+            filter_category = filter_combo.get()
+            if filter_category and filter_category not in ("All", "All Categories"):
+                items = [item for item in items if item.category_name == filter_category]
         except (ValueError, mysql.connector.Error) as error:
             messagebox.showerror("Inventory Unavailable", str(error))
             return
@@ -961,8 +997,7 @@ def create_inventory_tab_v2(parent_frame):
 
     ctk.CTkButton(inventory_frame, text="ADD", width=100, command=select_category,
                   fg_color="#86efac", text_color="black").pack(anchor="w", padx=20, pady=(0, 20))
-    ctk.CTkButton(header, text="Refresh", width=80, command=load_inventory_cards).pack(
-        side="right", padx=10, pady=8)
+    load_categories_filter()
     load_inventory_cards()
     return inventory_frame
 
@@ -1506,7 +1541,7 @@ def create_transactions_tab(parent_frame):
                   text_color="#1c3b7a", corner_radius=6,
                   command=refresh).pack(side="left", padx=5)
     filter_combo = ctk.CTkComboBox(toolbar, width=120, height=30,
-                                   values=["All", "Checkout", "Return"],
+                                   values=["All", "Cancelled", "Returned"],
                                    fg_color=WHITE, text_color="black",
                                    button_color=WHITE, corner_radius=6)
     filter_combo.set("All")
@@ -2239,7 +2274,7 @@ def create_accounts_tab(parent_frame):
 
     def move(action):
         account = selected()
-        if account and messagebox.askyesno("Confirm Account Deletion", "Permanently delete this account?", parent=app):
+        if account and messagebox.askyesno("Confirm Action ", "Are you sure you want to perform this action?", parent=app):
             try:
                 if not action(account.get("account_archive_id")):
                     raise ValueError("The archived account could not be found.")

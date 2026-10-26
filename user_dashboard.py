@@ -1056,7 +1056,7 @@ class CancelConfirmationModal:
         self.status = status
         self.modal = ctk.CTkToplevel(parent)
         self.modal.title("Cancel Request")
-        self.modal.geometry("750x450")
+        self.modal.geometry("450x330")
         self.modal.configure(fg_color=MODAL_BG)
         self.modal.transient(parent)
         self.modal.grab_set()
@@ -1283,7 +1283,7 @@ class PasswordModal:
         self.user_id = user_id
         self.modal = ctk.CTkToplevel(parent)
         self.modal.title("Change Password")
-        self.modal.geometry("550x450")
+        self.modal.geometry("350x400")
         self.modal.configure(fg_color=MODAL_BG)
         self.modal.transient(parent)
         self.modal.grab_set()
