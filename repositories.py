@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from datetime import datetime, date
+from datetime import date, datetime, timedelta
 from typing import List, Dict, Any
 from database import DatabaseManager
 from models.users import UserAccount, Session
@@ -85,18 +85,55 @@ class UserRepository(BaseRepository):
         conn = self._db.get_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
-            """SELECT t.transaction_id, ii.item_name, t.transaction_type,
-                      t.quantity, t.transaction_date
+            """SELECT t.transaction_id, t.request_id, ii.item_id, ii.item_name,
+                      ii.item_code, ii.description AS item_description,
+                      t.transaction_type, t.quantity, t.transaction_date,
+                      t.conditon_status AS condition_status, t.condition_notes,
+                      ir.request_status, ir.request_date, ir.due_date,
+                      ir.approved_by, ir.confirmed_by,
+                      COALESCE(
+                          NULLIF(CONCAT_WS(' ', approved_pi.first_name,
+                                           approved_pi.middle_name,
+                                           approved_pi.last_name), ''),
+                          CONCAT('User #', ir.approved_by)
+                      ) AS approved_by_name,
+                      COALESCE(
+                          NULLIF(CONCAT_WS(' ', confirmed_pi.first_name,
+                                           confirmed_pi.middle_name,
+                                           confirmed_pi.last_name), ''),
+                          CONCAT('User #', ir.confirmed_by)
+                      ) AS confirmed_by_name
                FROM transactions t
                JOIN item_requests ir ON ir.request_id=t.request_id
                JOIN inventory_items ii ON ii.item_id=ir.item_id
+               LEFT JOIN personal_info approved_pi ON approved_pi.user_id=ir.approved_by
+               LEFT JOIN personal_info confirmed_pi ON confirmed_pi.user_id=ir.confirmed_by
                WHERE ir.requester_id=%s
                UNION ALL
-               SELECT ta.arc_transaction_id AS transaction_id, ii.item_name,
-                      ta.transaction_type, ta.quantity, ta.transaction_date
+               SELECT ta.arc_transaction_id AS transaction_id, ta.request_id,
+                      ii.item_id, ii.item_name, ii.item_code,
+                      ii.description AS item_description,
+                      ta.transaction_type, ta.quantity, ta.transaction_date,
+                      ta.conditon_status AS condition_status, ta.condition_notes,
+                      ir.request_status, ir.request_date, ir.due_date,
+                      ir.approved_by, ir.confirmed_by,
+                      COALESCE(
+                          NULLIF(CONCAT_WS(' ', approved_pi.first_name,
+                                           approved_pi.middle_name,
+                                           approved_pi.last_name), ''),
+                          CONCAT('User #', ir.approved_by)
+                      ) AS approved_by_name,
+                      COALESCE(
+                          NULLIF(CONCAT_WS(' ', confirmed_pi.first_name,
+                                           confirmed_pi.middle_name,
+                                           confirmed_pi.last_name), ''),
+                          CONCAT('User #', ir.confirmed_by)
+                      ) AS confirmed_by_name
                FROM transactions_archive ta
                JOIN item_requests ir ON ir.request_id=ta.request_id
                JOIN inventory_items ii ON ii.item_id=ir.item_id
+               LEFT JOIN personal_info approved_pi ON approved_pi.user_id=ir.approved_by
+               LEFT JOIN personal_info confirmed_pi ON confirmed_pi.user_id=ir.confirmed_by
                WHERE ir.requester_id=%s
                ORDER BY transaction_date DESC""",
             (user_id, user_id),
@@ -786,9 +823,9 @@ class RequestRepository(BaseRepository):
                 return False
             cursor.execute(
                 """UPDATE item_requests
-                   SET request_status='Approved', processed_by=%s
+                   SET request_status='Approved', processed_by=%s, approved_by=%s
                    WHERE request_id=%s AND request_status='Pending'""",
-                (Session.load().get("user_id"), _id),
+                (Session.load().get("user_id"), Session.load().get("user_id"), _id),
             )
             if cursor.rowcount != 1:
                 conn.rollback()
@@ -817,20 +854,79 @@ class RequestRepository(BaseRepository):
         finally:
             cursor.close()
 
+    def confirm_received(self, request_id: int, student_user_id: int) -> bool:
+        conn = self._db.get_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute(
+                """SELECT ir.item_id, ir.quantity, ir.approved_by, c.requires_return
+                   FROM item_requests ir
+                   JOIN inventory_items ii ON ii.item_id=ir.item_id
+                   LEFT JOIN categories c ON c.category_id=ii.category_id
+                   WHERE ir.request_id=%s AND ir.requester_id=%s
+                     AND ir.request_status='Approved'""",
+                (request_id, student_user_id),
+            )
+            request = cursor.fetchone()
+            if not request:
+                return False
+            status = "Active" if request["requires_return"] else "Transaction Completed"
+            cursor.execute(
+                """UPDATE item_requests
+                   SET request_status=%s, confirmed_by=%s
+                   WHERE request_id=%s AND requester_id=%s
+                     AND request_status='Approved'""",
+                (status, student_user_id, request_id, student_user_id),
+            )
+            if cursor.rowcount != 1:
+                conn.rollback()
+                return False
+            cursor.execute(
+                """INSERT INTO transactions
+                   (request_id, transaction_type, transaction_date, quantity, handled_by)
+                   VALUES (%s, 'Checkout', NOW(), %s, %s)""",
+                (request_id, request["quantity"], request["approved_by"]),
+            )
+            if not InventoryRepository().adjust_stock(
+                request["item_id"], -request["quantity"], conn
+            ):
+                raise ValueError("Insufficient stock or item does not exist.")
+            conn.commit()
+            _log_action("UPDATE", "item_requests/transactions/inventory_items", request_id)
+            return True
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
+
     def confirm_pickup(
         self, request_id: int, admin_user_id: int, item_id: int, quantity: int
     ) -> bool:
         conn = self._db.get_connection()
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True)
         try:
             if quantity < 1:
                 raise ValueError("Quantity must be at least 1.")
             cursor.execute(
+                """SELECT c.requires_return
+                   FROM item_requests ir
+                   JOIN inventory_items ii ON ii.item_id=ir.item_id
+                   LEFT JOIN categories c ON c.category_id=ii.category_id
+                   WHERE ir.request_id=%s AND ir.item_id=%s
+                     AND ir.quantity=%s AND ir.request_status='Approved'""",
+                (request_id, item_id, quantity),
+            )
+            request = cursor.fetchone()
+            if not request:
+                return False
+            status = "Active" if request["requires_return"] else "Transaction Completed"
+            cursor.execute(
                 """UPDATE item_requests
-                   SET request_status='Active', processed_by=%s
+                   SET request_status=%s, processed_by=%s, confirmed_by=%s
                    WHERE request_id=%s AND item_id=%s AND quantity=%s
                      AND request_status='Approved'""",
-                (admin_user_id, request_id, item_id, quantity),
+                (status, admin_user_id, admin_user_id, request_id, item_id, quantity),
             )
             if cursor.rowcount != 1:
                 conn.rollback()
@@ -866,6 +962,10 @@ class RequestRepository(BaseRepository):
         try:
             if quantity < 1:
                 raise ValueError("Quantity must be at least 1.")
+            if not condition.strip():
+                raise ValueError("Condition status is required.")
+            if not notes.strip():
+                raise ValueError("Condition notes are required.")
             cursor.execute(
                 """UPDATE item_requests
                    SET request_status='Returned', processed_by=%s
@@ -1003,7 +1103,7 @@ class RequestRepository(BaseRepository):
                LEFT JOIN personal_info pi ON pi.user_id = ua.user_id
                JOIN inventory_items ii ON ii.item_id = ir.item_id
                LEFT JOIN categories c ON c.category_id = ii.category_id
-               WHERE ir.request_status NOT IN ('Returned', 'Completed')
+               WHERE ir.request_status NOT IN ('Returned', 'Completed', 'Transaction Completed')
                ORDER BY ir.request_date DESC"""
         )
         rows = cursor.fetchall()
@@ -1022,7 +1122,8 @@ class RequestRepository(BaseRepository):
                JOIN inventory_items ii ON ii.item_id=ir.item_id
                LEFT JOIN categories c ON c.category_id=ii.category_id
                WHERE ir.requester_id=%s
-                 AND ir.request_status NOT IN ('Returned', 'Completed', 'Cancelled')
+                 AND ir.request_status NOT IN
+                     ('Returned', 'Completed', 'Transaction Completed', 'Cancelled')
                ORDER BY ir.request_date DESC""",
             (user_id,),
         )
@@ -1067,16 +1168,43 @@ class RequestRepository(BaseRepository):
         self, item_id: int, requester_id: int, quantity: int, due_date=None
     ) -> bool:
         conn = self._db.get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            """INSERT INTO item_requests
-               (item_id, requester_id, quantity, request_status, request_date, due_date)
-               VALUES (%s, %s, %s, 'Pending', NOW(), %s)""",
-            (item_id, requester_id, quantity, due_date),
-        )
-        conn.commit()
-        created = cursor.rowcount > 0
-        cursor.close()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute(
+                """SELECT c.requires_return
+                   FROM inventory_items ii
+                   LEFT JOIN categories c ON c.category_id=ii.category_id
+                   WHERE ii.item_id=%s""",
+                (item_id,),
+            )
+            item = cursor.fetchone()
+            if not item:
+                raise ValueError("The requested item no longer exists.")
+            if item["requires_return"]:
+                if due_date is None:
+                    raise ValueError("A due date is required for returnable items.")
+                if isinstance(due_date, datetime):
+                    due_date = due_date.date()
+                if not isinstance(due_date, date):
+                    raise ValueError("Due date must be a valid calendar date.")
+                today = date.today()
+                if due_date < today or due_date > today + timedelta(days=90):
+                    raise ValueError("Items can only be borrowed for up to 3 months.")
+            else:
+                due_date = None
+            cursor.execute(
+                """INSERT INTO item_requests
+                   (item_id, requester_id, quantity, request_status, request_date, due_date)
+                   VALUES (%s, %s, %s, 'Pending', NOW(), %s)""",
+                (item_id, requester_id, quantity, due_date),
+            )
+            conn.commit()
+            created = cursor.rowcount > 0
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
         if created:
             _log_action("INSERT", "item_requests", item_id)
         return created
@@ -1159,17 +1287,88 @@ class TransactionRepository(BaseRepository):
             f"""SELECT {id_column} AS transaction_id, t.request_id,
                        t.transaction_type, t.quantity, t.conditon_status AS condition_status,
                        t.condition_notes, t.handled_by, t.transaction_date,
-                       ir.request_status, ii.item_name, ii.item_code,
+                       ir.request_status, ir.approved_by, ir.confirmed_by,
+                       ii.item_name, ii.item_code,
+                       CONCAT_WS(' ', approved_pi.first_name, approved_pi.middle_name,
+                                 approved_pi.last_name) AS approved_by_name,
+                       CONCAT_WS(' ', confirmed_pi.first_name, confirmed_pi.middle_name,
+                                 confirmed_pi.last_name) AS confirmed_by_name,
                        CONCAT_WS(' ', pi.first_name, pi.middle_name, pi.last_name) AS requester_name
                 FROM {table} t
                 JOIN item_requests ir ON ir.request_id=t.request_id
                 JOIN inventory_items ii ON ii.item_id=ir.item_id
                 LEFT JOIN personal_info pi ON pi.user_id=ir.requester_id
+                LEFT JOIN personal_info approved_pi ON approved_pi.user_id=ir.approved_by
+                LEFT JOIN personal_info confirmed_pi ON confirmed_pi.user_id=ir.confirmed_by
                 ORDER BY t.transaction_date DESC"""
         )
         rows = cursor.fetchall()
         cursor.close()
         return rows
+
+    def get_details(
+        self, transaction_id: int, mode: str = "current"
+    ) -> Dict[str, Any] | None:
+        if mode not in {"current", "archived"}:
+            raise ValueError("Transaction mode must be 'current' or 'archived'.")
+        table = "transactions" if mode == "current" else "transactions_archive"
+        id_column = "t.transaction_id" if mode == "current" else "t.arc_transaction_id"
+        archive_fields = (
+            "NULL AS archived_date, NULL AS archive_reason"
+            if mode == "current"
+            else "t.archived_date, t.archive_reason"
+        )
+        conn = self._db.get_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            f"""SELECT {id_column} AS transaction_id, t.request_id,
+                       t.transaction_type, t.quantity,
+                       t.conditon_status AS condition_status,
+                       t.condition_notes, t.handled_by, t.transaction_date,
+                       {archive_fields},
+                       ir.requester_id, ir.item_id, ir.quantity AS requested_quantity,
+                       ir.request_status, ir.request_date, ir.due_date,
+                       ir.processed_by, ir.approved_by, ir.confirmed_by,
+                       ii.item_name, ii.item_code, ii.description AS item_description,
+                       ii.stock, ii.serial_no, ii.unit,
+                       CONCAT_WS(' ', requester_pi.first_name,
+                                 requester_pi.middle_name,
+                                 requester_pi.last_name) AS requester_name,
+                       requester_pi.student_id, requester_pi.contact_number,
+                       requester_pi.birthday, requester_pi.gender,
+                       requester_pi.address, requester_pi.department,
+                       requester_pi.course,
+                       CONCAT_WS(' ', processed_pi.first_name,
+                                 processed_pi.middle_name,
+                                 processed_pi.last_name) AS processed_by_name,
+                       CONCAT_WS(' ', approved_pi.first_name,
+                                 approved_pi.middle_name,
+                                 approved_pi.last_name) AS approved_by_name,
+                       CONCAT_WS(' ', confirmed_pi.first_name,
+                                 confirmed_pi.middle_name,
+                                 confirmed_pi.last_name) AS confirmed_by_name,
+                       CONCAT_WS(' ', handled_pi.first_name,
+                                 handled_pi.middle_name,
+                                 handled_pi.last_name) AS handled_by_name
+                FROM {table} t
+                JOIN item_requests ir ON ir.request_id=t.request_id
+                JOIN inventory_items ii ON ii.item_id=ir.item_id
+                LEFT JOIN personal_info requester_pi
+                       ON requester_pi.user_id=ir.requester_id
+                LEFT JOIN personal_info processed_pi
+                       ON processed_pi.user_id=ir.processed_by
+                LEFT JOIN personal_info approved_pi
+                       ON approved_pi.user_id=ir.approved_by
+                LEFT JOIN personal_info confirmed_pi
+                       ON confirmed_pi.user_id=ir.confirmed_by
+                LEFT JOIN personal_info handled_pi
+                       ON handled_pi.user_id=t.handled_by
+                WHERE {id_column}=%s""",
+            (transaction_id,),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        return row
 
     def get_for_user(self, user_id: int, mode: str = "current") -> List[Dict[str, Any]]:
         conn = self._db.get_connection()
@@ -1180,10 +1379,17 @@ class TransactionRepository(BaseRepository):
             f"""SELECT {id_column} AS transaction_id, t.request_id,
                        t.transaction_type, t.quantity, t.conditon_status AS condition_status,
                        t.condition_notes, t.handled_by, t.transaction_date,
-                       ir.request_status, ir.requester_id, ii.item_name
+                       ir.request_status, ir.requester_id, ir.approved_by,
+                       ir.confirmed_by, ii.item_name,
+                       CONCAT_WS(' ', approved_pi.first_name, approved_pi.middle_name,
+                                 approved_pi.last_name) AS approved_by_name,
+                       CONCAT_WS(' ', confirmed_pi.first_name, confirmed_pi.middle_name,
+                                 confirmed_pi.last_name) AS confirmed_by_name
                 FROM {table} t
                 JOIN item_requests ir ON ir.request_id=t.request_id
                 JOIN inventory_items ii ON ii.item_id=ir.item_id
+                LEFT JOIN personal_info approved_pi ON approved_pi.user_id=ir.approved_by
+                LEFT JOIN personal_info confirmed_pi ON confirmed_pi.user_id=ir.confirmed_by
                 WHERE ir.requester_id=%s""",
             (user_id,),
         )

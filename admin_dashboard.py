@@ -60,7 +60,6 @@ main_bg.pack(fill="both", expand=True)
 header_frame = ctk.CTkFrame(main_bg, height=70, fg_color=DARK_BLUE, corner_radius=0)
 header_frame.pack(fill="x", side="top")
 
-# Logo
 logo_path = r"C:\Users\maxwx\OneDrive\Documents\SDF04-Aims\Assets\Aims_plain_white.png"
 try:
     if os.path.exists(logo_path):
@@ -77,7 +76,6 @@ def logout():
 
 logout_btn = ctk.CTkButton(header_frame, text="Log out", width=100, height=35, fg_color=RED, hover_color="#dc2626", corner_radius=8, font=("Arial", 14, "bold"), command=logout)
 logout_btn.pack(side="right", padx=20, pady=17)
-
 
 nav_frame = ctk.CTkFrame(main_bg, height=60, fg_color=WHITE, corner_radius=20)
 nav_frame.pack(fill="x", padx=20, pady=15)
@@ -103,7 +101,6 @@ for i, tab in enumerate(tabs):
     )
     btn.grid(row=0, column=i, padx=4, sticky="ew")
     nav_buttons[tab] = btn
-
 
 def create_analytics_tab(parent_frame):
     repository = AnalyticsRepository()
@@ -733,10 +730,9 @@ def create_inventory_tab_v2(parent_frame):
                 )
             current = selected_category["value"].requires_return
             stock.configure(state="normal")
-            if current:
+            if current and (not stock.get().strip() or stock.get().strip() == "0"):
                 stock.delete(0, "end")
                 stock.insert(0, "1")
-                stock.configure(state="disabled")
 
         if category_dropdown is not None:
             category_dropdown.configure(command=category_changed)
@@ -744,10 +740,9 @@ def create_inventory_tab_v2(parent_frame):
             toggle_expiration()
         if serial_enabled.get():
             toggle_serial()
-        if category.requires_return:
+        if category.requires_return and (not stock.get().strip() or stock.get().strip() == "0"):
             stock.delete(0, "end")
             stock.insert(0, "1")
-            stock.configure(state="disabled")
 
         def choose_image():
             path = filedialog.askopenfilename(parent=modal,
@@ -789,11 +784,12 @@ def create_inventory_tab_v2(parent_frame):
                         parent=modal,
                     )
                     return
-                stock_value = 1 if current_category.requires_return else int(stock_text)
-                if not 0 <= stock_value <= (1 if current_category.requires_return else 500):
+                stock_value = int(stock_text)
+                minimum_stock = 1 if current_category.requires_return else 0
+                if not minimum_stock <= stock_value <= 500:
                     messagebox.showwarning(
                         "Invalid Stock",
-                        "Stock must be between 0 and 500.",
+                        f"Stock must be between {minimum_stock} and 500.",
                         parent=modal,
                     )
                     return
@@ -875,7 +871,7 @@ def create_inventory_tab_v2(parent_frame):
             return
         modal = ctk.CTkToplevel(app)
         modal.title("Item Details")
-        modal.geometry("800x500")
+        modal.geometry("600x500")
         modal.configure(fg_color=MODAL_BG)
         modal.transient(app)
         modal.grab_set()
@@ -1042,7 +1038,7 @@ def create_requests_tab(parent_frame):
             return
         modal = ctk.CTkToplevel(app)
         modal.title("Item Details")
-        modal.geometry("800x500")
+        modal.geometry("800x710")
         modal.configure(fg_color=MODAL_BG)
         modal.transient(app)
         modal.grab_set()
@@ -1216,7 +1212,7 @@ class RequestModal:
         self.on_changed = on_changed
         self.modal = ctk.CTkToplevel(parent)
         self.modal.title("Item Request")
-        self.modal.geometry("800x500")
+        self.modal.geometry("650x500")
         self.modal.configure(fg_color=MODAL_BG)
         self.modal.transient(parent)
         self.modal.grab_set()
@@ -1284,7 +1280,7 @@ class RequestModal:
         actions.pack(fill="x", pady=(5, 8))
         for column in range(3):
             actions.grid_columnconfigure(column, weight=1, uniform="request_action")
-        ctk.CTkButton(actions, text="EDIT", height=35, fg_color="#f59e0b",
+        ctk.CTkButton(actions, text="UPDATE", height=35, fg_color="#f59e0b",
                       text_color="black", corner_radius=6,
                       command=self.save_edits).grid(row=0, column=0, sticky="ew", padx=3)
         ctk.CTkButton(actions, text="DELETE", height=35, fg_color=RED,
@@ -1292,10 +1288,7 @@ class RequestModal:
         ctk.CTkButton(actions, text="NOTIFY", height=35, fg_color=PURPLE,
                       corner_radius=6, command=lambda: NotifyModal(self.modal, request, repository)
                       ).grid(row=0, column=2, sticky="ew", padx=3)
-        ctk.CTkButton(
-            details, text="CLOSE", height=35, fg_color=RED,
-            corner_radius=6, command=self.modal.destroy,
-        ).pack(fill="x", pady=(0, 8))
+    
     def _update_confirm_button(self):
         labels = {
             "Pending": "CONFIRM REQUEST",
@@ -1339,6 +1332,9 @@ class RequestModal:
 
     def confirm_lifecycle(self):
         status = self.request.get("request_status")
+        if status in {"Active", "Return Requested"}:
+            self._show_return_condition_modal()
+            return
         if not messagebox.askyesno(
             "Confirm Request", "Confirm this request transition?", parent=self.modal
         ):
@@ -1353,15 +1349,6 @@ class RequestModal:
                     self.request["item_id"],
                     int(self.request["quantity"]),
                 )
-            elif status in {"Active", "Return Requested"}:
-                changed = self.repository.confirm_return(
-                    self.request["request_id"],
-                    current_user["user_id"],
-                    self.request["item_id"],
-                    int(self.request["quantity"]),
-                    "Good",
-                    "Returned in good condition.",
-                )
             else:
                 changed = False
             if not changed:
@@ -1371,6 +1358,94 @@ class RequestModal:
         except (ValueError, mysql.connector.Error) as error:
             messagebox.showerror("Request Error", str(error), parent=self.modal)
 
+    def _show_return_condition_modal(self):
+        condition_modal = ctk.CTkToplevel(self.modal)
+        condition_modal.title("Confirm Return")
+        condition_modal.geometry("500x300")
+        condition_modal.resizable(False, False)
+        condition_modal.configure(fg_color=MODAL_BG)
+        condition_modal.transient(self.modal)
+        condition_modal.grab_set()
+
+        body = ctk.CTkFrame(condition_modal, fg_color=MODAL_BG)
+        body.pack(fill="both", expand=True, padx=24, pady=24)
+        body.grid_columnconfigure(0, weight=1)
+        body.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(
+            body, text="Return Condition", text_color=WHITE,
+            font=MODAL_TITLE_FONT,
+        ).pack(anchor="w", pady=(0, 12))
+        fields = ctk.CTkFrame(body, fg_color="transparent")
+        fields.pack(fill="x", pady=(0, 16))
+        fields.grid_columnconfigure((0, 1), weight=1, uniform="condition_field")
+        ctk.CTkLabel(
+            fields, text="Condition Status", text_color=WHITE, font=MODAL_FONT,
+        ).grid(row=0, column=0, sticky="w", padx=(0, 10), pady=(0, 4))
+        condition = ctk.CTkComboBox(
+            fields, values=["Good", "Damaged", "Needs Repair", "Lost"],
+            fg_color=WHITE, text_color="black", button_color=WHITE,
+            corner_radius=8,
+        )
+        condition.grid(row=1, column=0, sticky="ew", padx=(0, 10))
+        condition.set("Good")
+        ctk.CTkLabel(
+            fields, text="Condition Notes", text_color=WHITE, font=MODAL_FONT,
+        ).grid(row=0, column=1, sticky="w", padx=(10, 0), pady=(0, 4))
+        notes = ctk.CTkTextbox(
+            fields, height=90, fg_color=WHITE, text_color="black", corner_radius=8,
+        )
+        notes.grid(row=1, column=1, sticky="ew", padx=(10, 0))
+
+        def submit():
+            condition_value = condition.get().strip()
+            notes_value = notes.get("1.0", "end-1c").strip()
+            if not condition_value or not notes_value:
+                messagebox.showwarning(
+                    "Validation",
+                    "Condition status and notes are required.",
+                    parent=condition_modal,
+                )
+                return
+            if not messagebox.askyesno(
+                "Confirm Return",
+                (
+                    "Finalize this return?\n\n"
+                    f"Condition: {condition_value}\n"
+                    f"Notes: {notes_value}\n\n"
+                    "This will complete the return transaction."
+                ),
+                parent=condition_modal,
+            ):
+                return
+            try:
+                changed = self.repository.confirm_return(
+                    self.request["request_id"],
+                    current_user["user_id"],
+                    self.request["item_id"],
+                    int(self.request["quantity"]),
+                    condition_value,
+                    notes_value,
+                )
+                if not changed:
+                    raise ValueError("The return could not be completed.")
+                condition_modal.destroy()
+                self.modal.destroy()
+                self.on_changed()
+            except (ValueError, mysql.connector.Error) as error:
+                messagebox.showerror("Return Error", str(error), parent=condition_modal)
+
+        actions = ctk.CTkFrame(body, fg_color="transparent")
+        actions.pack(fill="x")
+        actions.grid_columnconfigure((0, 1), weight=1, uniform="return_action")
+        ctk.CTkButton(
+            actions, text="Cancel", height=36, fg_color=RED,
+            command=condition_modal.destroy,
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        ctk.CTkButton(
+            actions, text="Submit Return", height=36, fg_color=GREEN,
+            text_color="black", command=submit,
+        ).grid(row=0, column=1, sticky="ew", padx=(6, 0))
+
 
 class NotifyModal:
     def __init__(self, parent, request, repository):
@@ -1378,7 +1453,7 @@ class NotifyModal:
         self.request = request
         self.modal = ctk.CTkToplevel(parent)
         self.modal.title("Send Notification")
-        self.modal.geometry("750x450")
+        self.modal.geometry("450x300")
         self.modal.configure(fg_color=MODAL_BG)
         self.modal.transient(parent)
         self.modal.grab_set()
@@ -1431,7 +1506,7 @@ def create_transactions_tab(parent_frame):
                   text_color="#1c3b7a", corner_radius=6,
                   command=refresh).pack(side="left", padx=5)
     filter_combo = ctk.CTkComboBox(toolbar, width=120, height=30,
-                                   values=["All", "Borrow", "Return"],
+                                   values=["All", "Checkout", "Return"],
                                    fg_color=WHITE, text_color="black",
                                    button_color=WHITE, corner_radius=6)
     filter_combo.set("All")
@@ -1442,12 +1517,12 @@ def create_transactions_tab(parent_frame):
 
     table = ctk.CTkScrollableFrame(frame, fg_color=WHITE, corner_radius=8)
     table.pack(fill="both", expand=True, padx=20, pady=20)
-    widths = [100, 130, 250, 130, 150]
+    widths = [100, 130, 250, 130, 150, 150, 150]
     for index, width in enumerate(widths):
         table.grid_columnconfigure(index, weight=1 if index == 2 else 0, minsize=width)
     for index, title in enumerate(
         ["Track No.", "Requested Item No.", "Transaction Details",
-         "Request Status", "Date/Time"]
+         "Request Status", "Approved By", "Received By", "Date/Time"]
     ):
         ctk.CTkLabel(table, text=title, fg_color="#dbeafe", text_color=TEXT_BLUE,
                      font=("Arial", 11, "bold"), anchor="w").grid(
@@ -1489,6 +1564,8 @@ def create_transactions_tab(parent_frame):
                 f"{row.get('transaction_type', '')}: {row.get('item_name', '')} "
                 f"x{row.get('quantity', 0)}",
                 row.get("request_status", ""),
+                row.get("approved_by_name") or "N/A",
+                row.get("confirmed_by_name") or "N/A",
                 date_value.strftime("%Y-%m-%d %H:%M") if date_value else "",
             ]
             widgets = []
@@ -1498,8 +1575,119 @@ def create_transactions_tab(parent_frame):
                 label.grid(row=row_index, column=column, sticky="ew", padx=1, pady=1)
                 label.bind("<Button-1>",
                            lambda _event=None, item=row, cells=widgets: select(item, cells))
+                label.bind(
+                    "<Double-Button-1>",
+                    lambda _event=None, item=row: show_transaction_details(item),
+                )
                 widgets.append(label)
             row_index += 1
+
+    def show_transaction_details(row):
+        try:
+            transaction = repository.get_details(
+                row["transaction_id"], state["mode"]
+            )
+        except (ValueError, mysql.connector.Error) as error:
+            messagebox.showerror("Transaction Details Unavailable", str(error), parent=app)
+            return
+        if transaction is None:
+            messagebox.showerror(
+                "Transaction Details Unavailable",
+                "The selected transaction could not be found.",
+                parent=app,
+            )
+            return
+
+        modal = ctk.CTkToplevel(app)
+        modal.title("Transaction Details")
+        modal.geometry("680x720")
+        modal.minsize(520, 500)
+        modal.configure(fg_color=MODAL_BG)
+        modal.transient(app)
+        modal.grab_set()
+
+        body = ctk.CTkScrollableFrame(modal, fg_color=MODAL_BG)
+        body.pack(fill="both", expand=True, padx=24, pady=(24, 12))
+
+        ctk.CTkLabel(
+            body, text="Transaction Details", text_color=WHITE,
+            font=MODAL_TITLE_FONT,
+        ).pack(anchor="w", pady=(0, 12))
+
+        def add_section(title, fields):
+            ctk.CTkLabel(
+                body, text=title, text_color="#93c5fd", font=("Arial", 14, "bold"),
+            ).pack(anchor="w", pady=(10, 4))
+            for label, key in fields:
+                value = key(transaction) if callable(key) else transaction.get(key)
+                if value is None or value == "":
+                    value = "N/A"
+                ctk.CTkLabel(
+                    body, text=f"{label}: {value}", text_color=WHITE,
+                    font=MODAL_FONT, anchor="w", justify="left", wraplength=590,
+                ).pack(fill="x", pady=2)
+
+        add_section(
+            "Transaction",
+            [
+                ("Transaction ID", lambda details: f"TRX-{details.get('transaction_id', 'N/A')}"),
+                ("Request ID", lambda details: f"REQ-{details.get('request_id', 'N/A')}"),
+                ("Type", "transaction_type"),
+                ("Quantity", "quantity"),
+                ("Condition Status", "condition_status"),
+                ("Condition Notes", "condition_notes"),
+                ("Transaction Date", "transaction_date"),
+                ("Transaction Handler", "handled_by_name"),
+            ],
+        )
+        add_section(
+            "Request",
+            [
+                ("Status", "request_status"),
+                ("Requested Quantity", "requested_quantity"),
+                ("Request Date", "request_date"),
+                ("Due Date", "due_date"),
+                ("Request Handler", "processed_by_name"),
+                ("Approved By", "approved_by_name"),
+                ("Confirmed By", "confirmed_by_name"),
+            ],
+        )
+        add_section(
+            "Item",
+            [
+                ("Item ID", "item_id"),
+                ("Name", "item_name"),
+                ("Item Code", "item_code"),
+                ("Description", "item_description"),
+                ("Serial No.", "serial_no"),
+                ("Unit", "unit"),
+                ("Current Stock", "stock"),
+            ],
+        )
+        add_section(
+            "Requester Personal Details",
+            [
+                ("User ID", "requester_id"),
+                ("Name", "requester_name"),
+                ("Student ID", "student_id"),
+                ("Contact Number", "contact_number"),
+                ("Birthday", "birthday"),
+                ("Gender", "gender"),
+                ("Address", "address"),
+                ("Department", "department"),
+                ("Course", "course"),
+            ],
+        )
+        if state["mode"] == "archived":
+            add_section(
+                "Archive",
+                [("Archived Date", "archived_date"), ("Archive Reason", "archive_reason")],
+            )
+
+        ctk.CTkButton(
+            modal, text="Close", height=36, fg_color=RED,
+            command=modal.destroy,
+        ).pack(fill="x", padx=24, pady=(0, 20))
 
     def require_selected():
         if state["selected"] is None:
@@ -1562,7 +1750,6 @@ def create_transactions_tab(parent_frame):
 
 transactions_frame = create_transactions_tab(main_bg)
 transactions_frame.pack_forget()
-
 
 class AccountEditor:
     department_data = {
@@ -1855,7 +2042,6 @@ class AccountEditor:
         except (ValueError, mysql.connector.Error) as error:
             messagebox.showerror("Account Error", str(error), parent=self.modal)
 
-
 class AdminPasswordModal:
     def __init__(self, parent, repository, account, on_changed=None):
         self.repository = repository
@@ -1911,7 +2097,6 @@ class AdminPasswordModal:
             self.on_changed()
         except (ValueError, mysql.connector.Error) as error:
             messagebox.showerror("Password Error", str(error), parent=self.modal)
-
 
 def create_accounts_tab(parent_frame):
     repository = UserRepository()
@@ -2080,22 +2265,21 @@ def create_accounts_tab(parent_frame):
 accounts_frame = create_accounts_tab(main_bg)
 accounts_frame.pack_forget()
 
-
 class LogoutConfirmationModal:
     """Modal for confirming logout action."""
 
     def __init__(self, parent):
         self.modal = ctk.CTkToplevel(parent)
         self.modal.title("Confirm Logout")
-        self.modal.geometry("450x200")
+        self.modal.geometry("350x200")
         self.modal.configure(fg_color=MODAL_BG)
         self.modal.transient(parent)
         self.modal.grab_set()
         self.modal.protocol("WM_DELETE_WINDOW", self.modal.destroy)
 
         self.modal.update_idletasks()
-        x = (self.modal.winfo_screenwidth() // 2) - 225
-        y = (self.modal.winfo_screenheight() // 2) - 125
+        x = (self.modal.winfo_screenwidth() // 2) - 175
+        y = (self.modal.winfo_screenheight() // 2) - 100
         self.modal.geometry(f"+{x}+{y}")
 
         body = ctk.CTkFrame(self.modal, fg_color=MODAL_BG)
@@ -2152,7 +2336,6 @@ class LogoutConfirmationModal:
             sys.executable,
             os.path.join(os.path.dirname(__file__), "main.py"),
         ])
-
 
 def show_tab(selected_tab):
     if selected_tab == "Analytics":

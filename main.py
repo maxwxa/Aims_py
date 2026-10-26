@@ -12,14 +12,12 @@ from models.users import Session
 
 app = ctk.CTk()
 
-
 def destroy_login_window() -> None:
     try:
         if app.winfo_exists():
             app.destroy()
     except TclError:
         pass
-
 
 app.geometry("900x550")
 app.title("Academic Inventory Management System - Login")
@@ -33,7 +31,6 @@ BG_GRAY = "#f3f4f6"
 
 left_frame = ctk.CTkFrame(app, width=450, height=550, fg_color=BLUE_BG, corner_radius=0)
 left_frame.pack(side="left", fill="both", expand=True)
-
 right_frame = ctk.CTkFrame(app, width=450, height=550, fg_color=BG_GRAY, corner_radius=0)
 right_frame.pack(side="right", fill="both", expand=True)
 
@@ -52,7 +49,6 @@ except Exception as e:
 
 ctk.CTkLabel(left_frame, text="A.I.M.S", font=("Arial", 36, "bold"), text_color=WHITE).pack(pady=(0, 5))
 ctk.CTkLabel(left_frame, text="Academic Inventory\nManagement System", font=("Arial", 22, "bold"), text_color=WHITE, justify="center").pack()
-
 
 card_frame = ctk.CTkFrame(right_frame, width=340, height=440, fg_color=WHITE, corner_radius=15, border_width=1, border_color="#e5e7eb")
 card_frame.place(relx=0.5, rely=0.5, anchor="center")

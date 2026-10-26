@@ -1,19 +1,19 @@
 import os
 import subprocess
 import sys
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from tkinter import messagebox
 
 import customtkinter as ctk
 import mysql.connector
 from PIL import Image
+from tkcalendar import DateEntry
 
 from models.users import Session
 from repositories import (
     InventoryRepository, CategoryRepository, RequestRepository, TransactionRepository,
     UserRepository,
 )
-
 
 DARK_BLUE = "#1c3b7a"
 BG_BLUE = "#eef2ff"
@@ -90,7 +90,6 @@ def load_user_info():
     except mysql.connector.Error as e:
         print(f"Error loading user info: {e}")
     
-    # Fallback to session data
     gmail = current_user.get("gmail", "user@example.com")
     username = gmail.split("@")[0]
     last_name = username.split(".")[-1].title() if "." in username else username.title()
@@ -107,18 +106,13 @@ class UserDashboard:
     def __init__(self):
         self.user_info = load_user_info()
         self.requests = load_my_requests()
-        self.notifications = load_notifications()
-        
-        # Main background frame
+        self.notifications = load_notifications()       
         self.main_bg = ctk.CTkFrame(app, fg_color=BG_BLUE, corner_radius=8)
-        self.main_bg.pack(fill="both", expand=True)
-        
-        # Build UI components
+        self.main_bg.pack(fill="both", expand=True)     
         self._build_header()
         self._build_navigation()
         self._build_content_area()
         
-        # Track active tab
         self.active_tab = "Home"
     
     def _build_header(self):
@@ -127,7 +121,6 @@ class UserDashboard:
         header_frame.pack(fill="x", side="top")
         header_frame.pack_propagate(False)
         
-        # Logo
         logo_path = r"C:\Users\maxwx\OneDrive\Documents\SDF04-Aims\Assets\Aims_plain_white.png"
         try:
             if os.path.exists(logo_path):
@@ -137,12 +130,10 @@ class UserDashboard:
             ctk.CTkLabel(header_frame, text="[LOGO]", text_color=WHITE, 
                         font=("Arial", 16, "bold")).place(x=20, y=25)
         
-        # Dynamic greeting with user's last name
         last_name = self.user_info.get("last_name", "User")
         ctk.CTkLabel(header_frame, text=f"Hello, {last_name}", 
                     font=("Arial", 28, "bold"), text_color=WHITE).place(x=90, y=20)
         
-        # Logout button aligned to the right
         logout_btn = ctk.CTkButton(header_frame, text="Log out", width=100, height=35,
                                    fg_color=RED, hover_color="#dc2626", corner_radius=8,
                                    font=("Arial", 14, "bold"),
@@ -183,15 +174,9 @@ class UserDashboard:
     def _build_content_area(self):
         """Build the main content area with all tabs."""
         self.content_frames = {}
-        
-        # Home tab
         self.content_frames["Home"] = self._create_home_tab()
         self.content_frames["Home"].pack(fill="both", expand=True, padx=20, pady=20)
-        
-        # Items tab
         self.content_frames["Items"] = self._create_items_tab()
-        
-        # Placeholder tabs
         for tab in ["History", "Profile"]:
             frame = self._create_history_tab() if tab == "History" else self._create_profile_tab()
             self.content_frames[tab] = frame
@@ -200,22 +185,16 @@ class UserDashboard:
         """Create the Home tab with Items and Notifications panels."""
         home_frame = ctk.CTkFrame(self.main_bg, fg_color=DARK_BLUE, corner_radius=8,
                                   border_width=1, border_color="#d1d5db")
-        
-        # Inner background frame
+    
         inner_frame = ctk.CTkFrame(home_frame, fg_color=BG_BLUE, corner_radius=8)
         inner_frame.pack(fill="both", expand=True, padx=2, pady=2)
-        
-        # Use grid layout for 5:4 split ratio (Items:Notifications)
         inner_frame.grid_columnconfigure(0, weight=5)
         inner_frame.grid_columnconfigure(1, weight=4)
         inner_frame.grid_rowconfigure(0, weight=1)
-        
-        # Items Panel (Left Side - weight 5)
         items_panel = ctk.CTkFrame(inner_frame, fg_color=WHITE, corner_radius=8,
                                    border_width=1, border_color="#d1d5db")
         items_panel.grid(row=0, column=0, sticky="nsew", padx=(10, 5), pady=10)
         
-        # Items panel header
         items_header = ctk.CTkFrame(items_panel, height=45, fg_color=DARK_BLUE, corner_radius=0)
         items_header.pack(fill="x", padx=0, pady=(0, 0))
         items_header.pack_propagate(False)
@@ -225,7 +204,6 @@ class UserDashboard:
                         side="left", padx=15, pady=10
                     )
         
-        # Toolbar frame with safe right margin to prevent clipping
         items_toolbar = ctk.CTkFrame(items_header, fg_color="transparent")
         items_toolbar.pack(side="right", padx=15)
         
@@ -235,21 +213,16 @@ class UserDashboard:
                                          corner_radius=6, fg_color=WHITE, text_color="black")
         self.items_search.pack(side="left", padx=(0, 0))
         self.items_search.bind("<KeyRelease>", lambda e: self._filter_items())
-        
-        # Items scrollable frame
         self.items_scroll = ctk.CTkScrollableFrame(items_panel, fg_color=WHITE,
                                                    corner_radius=0)
         self.items_scroll.pack(fill="both", expand=True, padx=15, pady=15)
         
-        # Load items
         self._load_items_cards()
         
-        # Notifications Panel (Right Side - weight 4)
         notif_panel = ctk.CTkFrame(inner_frame, fg_color=WHITE, corner_radius=8,
                                    border_width=1, border_color="#d1d5db")
         notif_panel.grid(row=0, column=1, sticky="nsew", padx=(5, 10), pady=10)
         
-        # Notifications panel header
         notif_header = ctk.CTkFrame(notif_panel, height=45, fg_color=DARK_BLUE, corner_radius=0)
         notif_header.pack(fill="x", padx=0, pady=(0, 0))
         notif_header.pack_propagate(False)
@@ -259,7 +232,6 @@ class UserDashboard:
                         side="left", padx=15, pady=10
                     )
         
-        # Toolbar frame with safe right margin to prevent clipping
         notif_toolbar = ctk.CTkFrame(notif_header, fg_color="transparent")
         notif_toolbar.pack(side="right", padx=15)
         
@@ -270,13 +242,11 @@ class UserDashboard:
         self.notif_search.pack(side="left", padx=(0, 0))
         self.notif_search.bind("<KeyRelease>", lambda e: self._filter_notifications())
         
-        # Notifications scrollable frame
         self.notif_scroll = ctk.CTkScrollableFrame(
             notif_panel, fg_color=WHITE, corner_radius=0,
         )
         self.notif_scroll.pack(fill="both", expand=True, padx=15, pady=15)
         
-        # Load notifications
         self._load_notifications_list()
         
         return home_frame
@@ -288,17 +258,13 @@ class UserDashboard:
         
         items_frame = ctk.CTkFrame(self.main_bg, fg_color=DARK_BLUE, corner_radius=8,
                                    border_width=1, border_color="#d1d5db")
-        
-        # Inner background frame
         inner_frame = ctk.CTkFrame(items_frame, fg_color=BG_BLUE, corner_radius=8)
         inner_frame.pack(fill="both", expand=True, padx=2, pady=2)
-        
-        # Item Catalogue panel
+    
         catalogue_panel = ctk.CTkFrame(inner_frame, fg_color=WHITE, corner_radius=8,
                                        border_width=1, border_color="#d1d5db")
         catalogue_panel.pack(fill="both", expand=True, padx=10, pady=10)
         
-        # Header with title, filter, and search
         cat_header = ctk.CTkFrame(catalogue_panel, height=45, fg_color=DARK_BLUE, corner_radius=0)
         cat_header.pack(fill="x", padx=0, pady=(0, 0))
         cat_header.pack_propagate(False)
@@ -308,16 +274,11 @@ class UserDashboard:
                          side="left", padx=15, pady=10
                      )
         
-        # Toolbar frame with safe right margin to prevent clipping
         controls_frame = ctk.CTkFrame(cat_header, fg_color="transparent")
         controls_frame.pack(side="right", padx=15)
-        
-        # Filter label -> ComboBox -> Search label -> Entry (left to right order)
         self.items_filter_label = ctk.CTkLabel(controls_frame, text="Filter:",
                                                font=("Arial", 12, "bold"), text_color=WHITE)
         self.items_filter_label.pack(side="left", padx=(0, 4))
-        
-        # Filter combobox
         self.items_filter = ctk.CTkComboBox(controls_frame, width=130, height=30,
                                             corner_radius=6, fg_color=WHITE,
                                             text_color="black", button_color=WHITE,
@@ -325,13 +286,9 @@ class UserDashboard:
         self.items_filter.pack(side="left", padx=(0, 12))
         self.items_filter.set("All Categories")
         self.items_filter.bind("<<ComboboxSelected>>", lambda e: self._load_inventory_grid())
-        
-        # Search label
         self.items_cat_search_label = ctk.CTkLabel(controls_frame, text="Search:",
                                                    font=("Arial", 12, "bold"), text_color=WHITE)
         self.items_cat_search_label.pack(side="left", padx=(0, 4))
-        
-        # Search entry
         self.items_cat_search = ctk.CTkEntry(controls_frame, width=130, height=30,
                                              corner_radius=6, fg_color=WHITE, text_color="black")
         self.items_cat_search.pack(side="left", padx=(0, 0))
@@ -342,13 +299,10 @@ class UserDashboard:
             corner_radius=6, command=self._refresh_dashboard,
         ).pack(side="left", padx=(8, 0))
         
-        # Scrollable grid container (2 columns)
         self.catalogue_container = ctk.CTkScrollableFrame(catalogue_panel, fg_color=BG_BLUE,
                                                           corner_radius=0)
         self.catalogue_container.pack(fill="both", expand=True, padx=15, pady=15)
         self.catalogue_container.grid_columnconfigure((0, 1), weight=1)
-        
-        # Load categories and inventory
         self._load_categories_filter()
         self._load_inventory_grid()
         
@@ -396,7 +350,6 @@ class UserDashboard:
                                 f"Could not load inventory data: {e}")
             return
         
-        # Display items in a 2-column grid with proper spacing
         for i, item in enumerate(items):
             row = i // 2
             col = i % 2
@@ -411,7 +364,6 @@ class UserDashboard:
         card.grid_columnconfigure(0, weight=1)
         card.grid_rowconfigure(1, weight=1)
         
-        # Top: White frame with bottom border containing item name centered
         name_frame = ctk.CTkFrame(card, fg_color=WHITE, corner_radius=0)
         name_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
         ctk.CTkLabel(name_frame, text=item.item_name,
@@ -427,8 +379,6 @@ class UserDashboard:
         ).pack(fill="x", padx=10, pady=(0, 6))
         # Bottom border line
         ctk.CTkFrame(name_frame, height=1, fg_color="#d1d5db").pack(fill="x", padx=10)
-        
-        # Middle: Image taking up bulk of space
         image_frame = ctk.CTkFrame(card, fg_color="#e5e7eb", corner_radius=0)
         image_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
         
@@ -436,7 +386,6 @@ class UserDashboard:
                                    text_color="#6b7280", font=("Arial", 10))
         image_label.pack(expand=True)
         
-        # Try to load image
         image_path = item.image_path
         if image_path and os.path.isfile(image_path):
             try:
@@ -446,22 +395,18 @@ class UserDashboard:
                 image_label.image = card_image
             except (OSError, ValueError):
                 pass
-        
-        # Bottom: Full-width frame split into 2 equal columns
         btn_frame = ctk.CTkFrame(card, fg_color=WHITE, corner_radius=0,
                                  border_width=1, border_color="#d1d5db")
         btn_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
         btn_frame.grid_columnconfigure(0, weight=1)
         btn_frame.grid_columnconfigure(1, weight=1)
         
-        # View Details button
         view_btn = ctk.CTkButton(btn_frame, text="View Details", height=35,
                                  fg_color=BLUE, hover_color="#1e40af", corner_radius=6,
                                  font=("Arial", 10, "bold"),
                                  command=lambda iid=item.item_id: self._show_view_details_modal(iid))
         view_btn.grid(row=0, column=0, sticky="ew", padx=(8, 4), pady=8)
         
-        # Request button
         is_out_of_stock = item.stock <= 0
         request_btn = ctk.CTkButton(btn_frame, text="Request", height=35,
                                     fg_color="#9ca3af" if is_out_of_stock else "#22c55e",
@@ -512,8 +457,11 @@ class UserDashboard:
             border_width=1, border_color="#d1d5db",
         )
         scroll.pack(fill="both", expand=True, padx=20, pady=(6, 20))
-        headers = ["Transaction ID", "Item Name", "Transaction Type", "Quantity", "Date"]
-        column_widths = (2, 3, 3, 1, 3)
+        headers = [
+            "Transaction ID", "Item Name", "Transaction Type", "Quantity",
+            "Approved By", "Received By", "Date",
+        ]
+        column_widths = (2, 3, 3, 1, 2, 2, 3)
         header = ctk.CTkFrame(
             scroll, fg_color="#dbeafe", corner_radius=8,
             border_width=1, border_color="#d1d5db",
@@ -556,16 +504,29 @@ class UserDashboard:
                 values = [
                     row.get("transaction_id", ""), row.get("item_name", ""),
                     row.get("transaction_type", ""), row.get("quantity", ""),
+                    row.get("approved_by_name") or "N/A",
+                    row.get("confirmed_by_name") or "N/A",
                     date_text,
                 ]
                 for index, value in enumerate(values):
-                    ctk.CTkLabel(
+                    label = ctk.CTkLabel(
                         card, text=str(value), text_color=TEXT_BLUE,
                         font=("Arial", 11, "bold") if index == 1 else MODAL_FONT,
                         anchor="w",
-                    ).grid(row=0, column=index, sticky="ew", padx=8, pady=8)
+                    )
+                    label.grid(row=0, column=index, sticky="ew", padx=8, pady=8)
+                    label.bind(
+                        "<Button-1>",
+                        lambda _event=None, transaction=row:
+                        self._show_transaction_details_modal(transaction),
+                    )
                 for index, width in enumerate(column_widths):
                     card.grid_columnconfigure(index, weight=width, uniform="col")
+                card.bind(
+                    "<Button-1>",
+                    lambda _event=None, transaction=row:
+                    self._show_transaction_details_modal(transaction),
+                )
 
         history_search.bind("<KeyRelease>", render_rows)
         ctk.CTkButton(
@@ -574,6 +535,68 @@ class UserDashboard:
         ).pack(side="left", padx=5)
         render_rows()
         return frame
+
+    def _show_transaction_details_modal(self, transaction):
+        modal = ctk.CTkToplevel(app)
+        modal.title("Transaction Details")
+        modal.geometry("600x560")
+        modal.minsize(480, 400)
+        modal.configure(fg_color=MODAL_BG)
+        modal.transient(app)
+        modal.grab_set()
+        modal.protocol("WM_DELETE_WINDOW", modal.destroy)
+        body = ctk.CTkScrollableFrame(modal, fg_color=MODAL_BG)
+        body.pack(fill="both", expand=True, padx=24, pady=(24, 12))
+        ctk.CTkLabel(
+            body, text="Transaction Details", text_color=WHITE,
+            font=MODAL_TITLE_FONT,
+        ).pack(anchor="w", pady=(0, 12))
+
+        date_value = transaction.get("transaction_date")
+        request_date = transaction.get("request_date")
+        due_date = transaction.get("due_date")
+        details = [
+            ("Transaction ID", f"TRX-{transaction.get('transaction_id', 'N/A')}"),
+            ("Request ID", f"REQ-{transaction.get('request_id', 'N/A')}"),
+            ("Item ID", transaction.get("item_id", "N/A")),
+            ("Item Name", transaction.get("item_name", "N/A")),
+            ("Item Code", transaction.get("item_code", "N/A")),
+            ("Transaction Type", transaction.get("transaction_type", "N/A")),
+            ("Quantity", transaction.get("quantity", "N/A")),
+            ("Request Status", transaction.get("request_status", "N/A")),
+            ("Approved By", transaction.get("approved_by_name") or "N/A"),
+            ("Received By", transaction.get("confirmed_by_name") or "N/A"),
+            ("Request Date", request_date or "N/A"),
+            ("Due Date", due_date or "Not applicable"),
+            ("Transaction Date", date_value or "N/A"),
+            ("Condition Status", transaction.get("condition_status") or "N/A"),
+        ]
+        for label, value in details:
+            ctk.CTkLabel(
+                body, text=f"{label}: {value}", text_color=WHITE,
+                font=MODAL_FONT, anchor="w", justify="left",
+            ).pack(fill="x", pady=3)
+
+        ctk.CTkLabel(
+            body, text="Item Description", text_color=WHITE, font=MODAL_FONT,
+        ).pack(anchor="w", pady=(12, 2))
+        ctk.CTkLabel(
+            body, text=transaction.get("item_description") or "No description available.",
+            text_color="#bfdbfe", font=MODAL_FONT, wraplength=500,
+            anchor="w", justify="left",
+        ).pack(fill="x", pady=(0, 8))
+        ctk.CTkLabel(
+            body, text="Condition Notes", text_color=WHITE, font=MODAL_FONT,
+        ).pack(anchor="w", pady=(8, 2))
+        ctk.CTkLabel(
+            body, text=transaction.get("condition_notes") or "No condition notes.",
+            text_color="#bfdbfe", font=MODAL_FONT, wraplength=500,
+            anchor="w", justify="left",
+        ).pack(fill="x", pady=(0, 12))
+        ctk.CTkButton(
+            modal, text="Close", height=36, fg_color=RED,
+            command=modal.destroy,
+        ).pack(fill="x", padx=24, pady=(0, 20))
 
     def _create_profile_tab(self):
         frame = ctk.CTkFrame(self.main_bg, fg_color=DARK_BLUE, corner_radius=8,
@@ -647,8 +670,6 @@ class UserDashboard:
         # Clear existing cards
         for widget in self.items_scroll.winfo_children():
             widget.destroy()
-        
-        # Create cards for each request - zero gap between cards
         for req in self.requests:
             if req.get("request_status") in {"Returned", "Cancelled"}:
                 continue
@@ -661,17 +682,13 @@ class UserDashboard:
                            border_width=1, border_color="#d1d5db")
         card.grid_columnconfigure(0, weight=1)
         card.grid_rowconfigure(1, weight=1)
-        
-        # Top: White frame with bottom border containing item name centered
         name_frame = ctk.CTkFrame(card, fg_color=WHITE, corner_radius=0)
         name_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
         ctk.CTkLabel(name_frame, text=request["item_name"],
                      font=("Arial", 12, "bold"), text_color=TEXT_BLUE,
                      anchor="center").pack(fill="x", padx=10, pady=(8, 8))
-        # Bottom border line
         ctk.CTkFrame(name_frame, height=1, fg_color="#d1d5db").pack(fill="x", padx=10)
         
-        # Middle: Image taking up bulk of space
         image_frame = ctk.CTkFrame(card, fg_color="#e5e7eb", corner_radius=0)
         image_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
         
@@ -679,7 +696,6 @@ class UserDashboard:
                                    text_color="#6b7280", font=("Arial", 10))
         image_label.pack(expand=True)
         
-        # Try to load image
         image_path = request.get("image_path")
         if image_path and os.path.isfile(image_path):
             try:
@@ -689,8 +705,7 @@ class UserDashboard:
                 image_label.image = card_image
             except (OSError, ValueError):
                 pass
-        
-        # Bottom: Full-width action button spanning entire card width
+
         status = request["request_status"]
         
         if status == "Pending":
@@ -710,17 +725,17 @@ class UserDashboard:
                 border_width=1, border_color="#d1d5db",
             )
             status_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
-            ctk.CTkLabel(status_frame, text="Pickup the item",
+            ctk.CTkLabel(status_frame, text="Waiting for admin to confirm receipt",
                         font=("Arial", 10, "bold"), text_color=TEXT_BLUE,
                         anchor="center").pack(fill="x", padx=8, pady=(6, 2))
             ctk.CTkButton(
-                status_frame, text="Cancel Accepted Request", height=30,
+                status_frame, text="Cancel Accepted Request", height=26,
                 fg_color=RED, hover_color="#dc2626", corner_radius=6,
                 font=("Arial", 10, "bold"),
                 command=lambda rid=request["request_id"]: self._show_cancel_modal(
                     rid, request["item_name"], status
                 ),
-            ).pack(fill="x", padx=8, pady=(2, 6))
+            ).pack(fill="x", padx=8, pady=(0, 6))
 
         elif status == "Active":
             btn_frame = ctk.CTkFrame(card, fg_color=WHITE, corner_radius=0,
@@ -752,7 +767,6 @@ class UserDashboard:
             status_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
             ctk.CTkLabel(status_frame, text="Already returned", font=("Arial", 10),
                         text_color="#6b7280", anchor="center").pack(fill="both", expand=True, padx=8, pady=8)
-        
         return card
     
     def _load_notifications_list(self):
@@ -761,71 +775,125 @@ class UserDashboard:
         for widget in self.notif_scroll.winfo_children():
             widget.destroy()
         
-        # Create notification rows
         for notif in self.notifications:
             self._create_notification_row(self.notif_scroll, notif)
     
     def _create_notification_row(self, parent, notification):
-        """Create a single notification row — slim, sleek list item."""
-        is_unread = notification["notif_isread"] == 0
-        
-        # Row frame — slim with border_width=1 and corner_radius=6
-        row = ctk.CTkFrame(parent, fg_color=WHITE if is_unread else "#f9fafb",
-                          corner_radius=6, border_width=1, border_color="#d1d5db")
-        row.pack(fill="x", padx=8, pady=3)
-        
-        # Grid content frame with columns
-        content = ctk.CTkFrame(row, fg_color="transparent")
-        content.pack(fill="x", padx=10, pady=3)
-        content.grid_columnconfigure(0, weight=0, minsize=120)
-        content.grid_columnconfigure(1, weight=0, minsize=1)  # Separator column
-        content.grid_columnconfigure(2, weight=1)  # Message column
-        content.grid_columnconfigure(3, weight=0, minsize=1)  # Separator column
-        content.grid_columnconfigure(4, weight=0, minsize=100)
-        content.grid_columnconfigure(5, weight=0, minsize=90)
-        
-        # Date/time on the left
+     is_unread = notification["notif_isread"] == 0
+    
+     row = ctk.CTkFrame(parent, fg_color=WHITE if is_unread else "#f9fafb",
+                      corner_radius=6, border_width=1, border_color="#d1d5db",
+                      height=46)
+     row.pack(fill="x", padx=8, pady=3)
+     row.pack_propagate(False)
+    
+     content = ctk.CTkFrame(row, fg_color="transparent")
+     content.pack(fill="both", expand=True, padx=10, pady=3)
+     content.grid_rowconfigure(0, weight=1)
+     content.grid_columnconfigure(0, weight=0, minsize=120)
+     content.grid_columnconfigure(1, weight=0, minsize=1)  
+     content.grid_columnconfigure(2, weight=1)  
+     content.grid_columnconfigure(3, weight=0, minsize=1) 
+     content.grid_columnconfigure(4, weight=0, minsize=100)
+     content.grid_columnconfigure(5, weight=0, minsize=90)
+    
+     date_str = notification["notif_create"].strftime("%Y-%m-%d %H:%M")
+     date_label = ctk.CTkLabel(content, text=date_str,
+                              font=("Arial", 10, "bold") if is_unread else ("Arial", 10),
+                              text_color=TEXT_BLUE, anchor="w")
+     date_label.grid(row=0, column=0, sticky="ew", padx=(15, 3), pady=3)
+
+     view_btn = ctk.CTkButton(content, text="View", width=70, height=28,
+                             font=("Arial", 11, "bold"), fg_color=BLUE, hover_color="#1e40af",
+                             command=lambda: self._show_notification_modal(notification))
+     view_btn.grid(row=0, column=2, sticky="w", padx=10, pady=3)
+     ctk.CTkFrame(content, width=1, height=1, fg_color="#d1d5db").grid(row=0, column=1, sticky="ns", pady=3)
+    
+     notif_type = notification["notif_type"]
+     type_prefix = "From: " if notif_type == "Admin" else "System: "
+     type_label = ctk.CTkLabel(content, text=f"{type_prefix}{notif_type}",
+                              font=("Arial", 10, "italic"),
+                              text_color="#6b7280", anchor="e")
+     type_label.grid(row=0, column=4, sticky="ew", padx=(3, 5), pady=3)
+    
+     if is_unread:
+        indicator = ctk.CTkFrame(content, width=8, height=8, fg_color=BLUE, corner_radius=4)
+        indicator.grid(row=0, column=0, sticky="w", padx=(2, 0), pady=3)
+
+        def open_modal(_event=None):
+            self._show_notification_modal(notification)
+
+        for widget in (row, content, *content.winfo_children()):
+            widget.bind("<Button-1>", open_modal)
+
+    def _show_notification_modal(self, notification):
+        """Show the complete notification message in a separate window."""
+        modal = ctk.CTkToplevel(app)
+        modal.title("Notification")
+        modal.geometry("540x360")
+        modal.minsize(420, 280)
+        modal.configure(fg_color=MODAL_BG)
+        modal.transient(app)
+        modal.grab_set()
+        modal.protocol("WM_DELETE_WINDOW", modal.destroy)
+
+        body = ctk.CTkFrame(modal, fg_color=MODAL_BG)
+        body.pack(fill="both", expand=True, padx=24, pady=24)
+        body.grid_columnconfigure(0, weight=1)
+        body.grid_rowconfigure(2, weight=1)
+
+        ctk.CTkLabel(
+            body, text="Notification", text_color=WHITE, font=MODAL_TITLE_FONT,
+        ).grid(row=0, column=0, sticky="w", pady=(0, 10))
+
         date_str = notification["notif_create"].strftime("%Y-%m-%d %H:%M")
-        date_label = ctk.CTkLabel(content, text=date_str,
-                                  font=("Arial", 10, "bold") if is_unread else ("Arial", 10),
-                                  text_color=TEXT_BLUE, anchor="w")
-        date_label.grid(row=0, column=0, sticky="ew", padx=(15, 3), pady=3)
-        
-        # Vertical separator line between Date and Message
-        ctk.CTkFrame(content, width=1, height=20, fg_color="#d1d5db").grid(row=0, column=1, sticky="ns", pady=3)
-        
-        # Message in the center
-        msg_label = ctk.CTkLabel(content, text=notification["notif_message"],
-                                 font=("Arial", 11, "bold") if is_unread else ("Arial", 11),
-                                 text_color="black", wraplength=250, anchor="w")
-        msg_label.grid(row=0, column=2, sticky="ew", padx=3, pady=3)
-        
-        # Vertical separator line between Message and Type
-        ctk.CTkFrame(content, width=1, height=20, fg_color="#d1d5db").grid(row=0, column=3, sticky="ns", pady=3)
-        
-        # Type on the right (e.g., "From: Admin")
         notif_type = notification["notif_type"]
-        type_prefix = "From: " if notif_type == "Admin" else "System: "
-        type_label = ctk.CTkLabel(content, text=f"{type_prefix}{notif_type}",
-                                  font=("Arial", 10, "italic"),
-                                  text_color="#6b7280", anchor="e")
-        type_label.grid(row=0, column=4, sticky="ew", padx=(3, 5), pady=3)
-        
-        # Unread indicator
-        if is_unread:
-            indicator = ctk.CTkFrame(content, width=8, height=8, fg_color=BLUE, corner_radius=4)
-            indicator.grid(row=0, column=0, sticky="w", padx=(2, 0), pady=3)
+        ctk.CTkLabel(
+            body, text=f"{date_str}  |  {notif_type}",
+            text_color="#bfdbfe", font=("Arial", 11),
+        ).grid(row=1, column=0, sticky="w", pady=(0, 12))
+
+        message_frame = ctk.CTkScrollableFrame(body, fg_color=WHITE, corner_radius=6)
+        message_frame.grid(row=2, column=0, sticky="nsew", pady=(0, 16))
+        ctk.CTkLabel(
+            message_frame,
+            text=str(notification["notif_message"]),
+            text_color="black",
+            font=MODAL_FONT,
+            wraplength=460,
+            anchor="nw",
+            justify="left",
+        ).pack(fill="x", padx=14, pady=14)
+
+        actions = ctk.CTkFrame(body, fg_color="transparent")
+        actions.grid(row=3, column=0, sticky="ew")
+        actions.grid_columnconfigure(0, weight=1)
+        actions.grid_columnconfigure(1, weight=1)
+
+        def mark_read_and_close():
+            modal.destroy()
+            self._mark_notification_read(notification["notif_id"])
+
+        if notification["notif_isread"] == 0:
             ctk.CTkButton(
-                content, text="Mark Read", width=82, height=24,
-                fg_color=BLUE, hover_color="#1e40af", corner_radius=5,
-                command=lambda nid=notification["notif_id"]: self._mark_notification_read(nid),
-            ).grid(row=0, column=5, sticky="e", padx=(3, 5), pady=3)
+                actions, text="Mark Read", height=36, fg_color=BLUE,
+                hover_color="#1e40af", corner_radius=8,
+                command=mark_read_and_close,
+            ).grid(row=0, column=0, sticky="ew", padx=(0, 6))
+
+        ctk.CTkButton(
+            actions, text="Close", height=36, fg_color=RED, corner_radius=8,
+            command=modal.destroy,
+        ).grid(
+            row=0, column=1 if notification["notif_isread"] == 0 else 0,
+            columnspan=1, sticky="ew",
+            padx=(6, 0) if notification["notif_isread"] == 0 else 0,
+        )
     
     def _filter_items(self):
         """Filter items based on search text."""
         search_term = self.items_search.get().lower()
-        
-        # Clear and reload filtered cards
+
         for widget in self.items_scroll.winfo_children():
             widget.destroy()
         
@@ -841,7 +909,6 @@ class UserDashboard:
         """Filter notifications based on search text."""
         search_term = self.notif_search.get().lower()
         
-        # Clear and reload filtered notifications
         for widget in self.notif_scroll.winfo_children():
             widget.destroy()
         
@@ -852,22 +919,18 @@ class UserDashboard:
         for notif in filtered:
             self._create_notification_row(self.notif_scroll, notif)
         
-        # Add bottom border line
         ctk.CTkFrame(self.notif_scroll, height=1, fg_color="#333333").pack(fill="x")
     
     def _show_tab(self, selected_tab):
         """Switch between tabs."""
-        # Hide all content frames
         for frame in self.content_frames.values():
             frame.pack_forget()
-        
-        # Show selected tab
+
         if selected_tab == "Home":
             self.content_frames["Home"].pack(fill="both", expand=True, padx=20, pady=20)
         else:
             self.content_frames[selected_tab].pack(fill="both", expand=True, padx=20, pady=20)
-        
-        # Update navigation button colors
+
         for tab, button in self.nav_buttons.items():
             button.configure(fg_color=DARK_BLUE if tab == selected_tab else TEXT_BLUE)
         
@@ -935,41 +998,32 @@ class UserDashboard:
         except mysql.connector.Error as e:
             messagebox.showerror("Error", f"Could not load item details: {e}")
 
-
-# ==========================================
-# MODAL CLASSES
-# ==========================================
 class LogoutConfirmationModal:
     """Modal for confirming logout action."""
     
     def __init__(self, parent):
         self.modal = ctk.CTkToplevel(parent)
         self.modal.title("Confirm Logout")
-        self.modal.geometry("450x200")
+        self.modal.geometry("350x200")
         self.modal.configure(fg_color=MODAL_BG)
         self.modal.transient(parent)
         self.modal.grab_set()
         self.modal.protocol("WM_DELETE_WINDOW", self.modal.destroy)
         
-        # Center the modal
         self.modal.update_idletasks()
         x = (self.modal.winfo_screenwidth() // 2) - 200
         y = (self.modal.winfo_screenheight() // 2) - 150
         self.modal.geometry(f"+{x}+{y}")
         
-        # Body frame
         body = ctk.CTkFrame(self.modal, fg_color=MODAL_BG)
         body.pack(fill="both", expand=True, padx=24, pady=(24, 20))
-        
-        # Title
+
         ctk.CTkLabel(body, text="Log Out", text_color=WHITE,
                     font=MODAL_TITLE_FONT).pack(anchor="w", pady=(0, 10))
         
-        # Message
         ctk.CTkLabel(body, text="Are you sure you want to log out?",
                     text_color="#bfdbfe", font=MODAL_FONT).pack(anchor="w", pady=(0, 20))
         
-        # Action buttons
         actions = ctk.CTkFrame(body, fg_color="transparent")
         actions.pack(fill="x", pady=(20, 0))
         actions.grid_columnconfigure((0, 1), weight=1, uniform="action")
@@ -993,7 +1047,6 @@ class LogoutConfirmationModal:
         app.destroy()
         subprocess.Popen([sys.executable, os.path.join(os.path.dirname(__file__), "main.py")])
 
-
 class CancelConfirmationModal:
     """Modal for confirming request cancellation."""
     
@@ -1001,7 +1054,6 @@ class CancelConfirmationModal:
         self.request_id = request_id
         self.item_name = item_name
         self.status = status
-        
         self.modal = ctk.CTkToplevel(parent)
         self.modal.title("Cancel Request")
         self.modal.geometry("750x450")
@@ -1010,21 +1062,17 @@ class CancelConfirmationModal:
         self.modal.grab_set()
         self.modal.protocol("WM_DELETE_WINDOW", lambda: None)
         
-        # Center the modal
         self.modal.update_idletasks()
         x = (self.modal.winfo_screenwidth() // 2) - 225
         y = (self.modal.winfo_screenheight() // 2) - 150
         self.modal.geometry(f"+{x}+{y}")
         
-        # Body frame
         body = ctk.CTkFrame(self.modal, fg_color=MODAL_BG)
         body.pack(fill="both", expand=True, padx=24, pady=(24, 20))
         
-        # Title
         ctk.CTkLabel(body, text="Cancel Request", text_color=WHITE,
                     font=MODAL_TITLE_FONT).pack(anchor="w", pady=(0, 10))
         
-        # Message
         ctk.CTkLabel(body, text=f"Are you sure you want to cancel your request for '{self.item_name}'?",
                     text_color="#bfdbfe", font=MODAL_FONT, wraplength=380)\
                     .pack(anchor="w", pady=(0, 20))
@@ -1039,7 +1087,6 @@ class CancelConfirmationModal:
             )
             self.reason.pack(fill="x", pady=(0, 10))
         
-        # Action buttons
         actions = ctk.CTkFrame(body, fg_color="transparent")
         actions.pack(fill="x", pady=(20, 0))
         actions.grid_columnconfigure((0, 1), weight=1, uniform="action")
@@ -1088,44 +1135,59 @@ class ItemReturnModal:
         
         self.modal = ctk.CTkToplevel(parent)
         self.modal.title("Return Item")
-        self.modal.geometry("750x450")
+        self.modal.geometry("800x510")
         self.modal.configure(fg_color=MODAL_BG)
         self.modal.transient(parent)
         self.modal.grab_set()
         self.modal.protocol("WM_DELETE_WINDOW", self.modal.destroy)
-        
-        # Center the modal
         self.modal.update_idletasks()
-        x = (self.modal.winfo_screenwidth() // 2) - 225
+        x = (self.modal.winfo_screenwidth() // 2) - 400
         y = (self.modal.winfo_screenheight() // 2) - 275
         self.modal.geometry(f"+{x}+{y}")
         
-        # Body frame
-        body = ctk.CTkFrame(self.modal, fg_color=MODAL_BG)
-        body.pack(fill="both", expand=True, padx=24, pady=(24, 20))
+        card_frame = ctk.CTkFrame(self.modal, fg_color="white", corner_radius=10)
+        card_frame.pack(fill="both", expand=True, padx=20, pady=20)
         
-        # Title
-        ctk.CTkLabel(body, text="Return Item", text_color=WHITE,
-                    font=MODAL_TITLE_FONT).pack(anchor="w", pady=(0, 10))
+        card_frame.grid_columnconfigure(0, weight=1)
+        card_frame.grid_columnconfigure(1, weight=2)
+        card_frame.grid_rowconfigure(0, weight=1)
         
-        # Item image preview
-        image_frame = ctk.CTkFrame(body, width=200, height=150, fg_color=WHITE, corner_radius=8)
-        image_frame.pack(fill="x", pady=(10, 15))
-        image_frame.pack_propagate(False)
+        left_frame = ctk.CTkFrame(card_frame, fg_color="transparent")
+        left_frame.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
         
-        image_label = ctk.CTkLabel(image_frame, text="No image", text_color="black",
-                                   font=("Arial", 10))
+        ctk.CTkLabel(left_frame, text="Return Item", text_color=TEXT_BLUE, # Assuming TEXT_BLUE is defined
+                    font=("Arial", 20, "bold")).pack(anchor="w", pady=(0, 15))
+        
+        image_bg = ctk.CTkFrame(left_frame, fg_color="#f3f4f6", corner_radius=10, width=220, height=220)
+        image_bg.pack(pady=(0, 15))
+        image_bg.pack_propagate(False)
+        
+        image_label = ctk.CTkLabel(image_bg, text="No image", text_color="gray", font=("Arial", 12))
         image_label.pack(expand=True)
         
         image_path = request.get("image_path")
         if image_path and os.path.isfile(image_path):
             try:
                 source = Image.open(image_path)
-                return_image = ctk.CTkImage(light_image=source, dark_image=source, size=(180, 130))
+                return_image = ctk.CTkImage(light_image=source, dark_image=source, size=(200, 200))
                 image_label.configure(image=return_image, text="")
                 image_label.image = return_image
             except (OSError, ValueError):
                 pass
+
+        item_name = request.get("item_name", "N/A")
+        item_code = request.get("item_code", "N/A")
+        
+        ctk.CTkLabel(left_frame, text=item_name, text_color=TEXT_BLUE, 
+                     font=("Arial", 14, "bold"), wraplength=200).pack()
+        ctk.CTkLabel(left_frame, text=f"Code: {item_code}", text_color="gray", 
+                     font=("Arial", 12)).pack()
+
+        right_frame = ctk.CTkFrame(card_frame, fg_color="transparent")
+        right_frame.grid(row=0, column=1, sticky="nsew", padx=20, pady=40)
+        
+        right_frame.grid_columnconfigure(0, weight=0, minsize=120)
+        right_frame.grid_columnconfigure(1, weight=1)
         
         try:
             item = InventoryRepository().get_by_id(request["item_id"])
@@ -1136,52 +1198,50 @@ class ItemReturnModal:
         details = [
             ("Request Code", f"REQ-{request.get('request_id', 'N/A')}"),
             ("Item ID", request.get("item_id", "N/A")),
-            ("Item Name", request.get("item_name", "N/A")),
-            ("Item Code", request.get("item_code", "N/A")),
-            ("Category", request.get("category_name", "N/A")),
-            ("Requested Quantity", request.get("quantity", "N/A")),
-            ("Request Status", request.get("request_status", "N/A")),
+            ("Request Status", request.get("request_status", "N/A"))
         ]
+        
         if item:
             details.extend([
-                ("Stock", item.stock),
                 ("Serial No.", item.serial_no or "N/A"),
                 ("Added Date", item.added_date or "N/A"),
-                ("Updated Date", item.updated_date or "N/A"),
             ])
-        for label, value in details:
-            self._readonly_field(body, label, value)
-        self._readonly_field(
-            body, "Item Description",
-            (item.description if item else request.get("item_description", ""))
-            or "No description available.",
-            multiline=True,
-        )
+
+        for idx, (label_text, value) in enumerate(details):
+            ctk.CTkLabel(right_frame, text=label_text, text_color=TEXT_BLUE, 
+                         font=("Arial", 12)).grid(row=idx, column=0, sticky="w", pady=5)
+            
+            entry = ctk.CTkEntry(right_frame, fg_color="#f9fafb", text_color="black", 
+                                 border_color="#d1d5db", height=30)
+            entry.grid(row=idx, column=1, sticky="ew", pady=5, padx=(10, 0))
+            entry.insert(0, str(value))
+            entry.configure(state="readonly")
+            
+        desc_idx = len(details)
+        ctk.CTkLabel(right_frame, text="Description", text_color=TEXT_BLUE, 
+                     font=("Arial", 12)).grid(row=desc_idx, column=0, sticky="nw", pady=(10, 5))
         
-        # Description box
-        ctk.CTkLabel(body, text="Return Description", text_color=WHITE,
-                    font=MODAL_FONT).pack(anchor="w", pady=(12, 2))
-        self.description_box = ctk.CTkTextbox(body, height=80, corner_radius=8,
-                                              fg_color=WHITE, text_color="black")
-        self.description_box.pack(fill="x", pady=(0, 15))
-        self.description_box.insert("1.0", "Item returned in good condition.")
-        
-        # Action buttons
-        actions = ctk.CTkFrame(body, fg_color="transparent")
-        actions.pack(fill="x", pady=(10, 0))
-        actions.grid_columnconfigure((0, 1), weight=1, uniform="action")
-        
-        ctk.CTkButton(actions, text="Cancel", width=120, height=40,
-                     command=self.modal.destroy,
-                     fg_color=RED, corner_radius=8,
-                     font=("Arial", 12, "bold"))\
-                     .grid(row=0, column=0, sticky="ew", padx=(0, 10))
-        
-        ctk.CTkButton(actions, text="Confirm Return", width=120, height=40,
-                     command=self._confirm_return,
-                     fg_color=GREEN, corner_radius=8,
-                     font=("Arial", 12, "bold"))\
-                     .grid(row=0, column=1, sticky="ew", padx=(10, 0))
+        desc_box = ctk.CTkTextbox(right_frame, height=60, fg_color="#f9fafb", 
+                                  text_color="black", border_color="#d1d5db", border_width=1)
+        desc_box.grid(row=desc_idx, column=1, sticky="ew", pady=(10, 5), padx=(10, 0))
+        desc_text = (item.description if item else request.get("item_description", "")) or "No description available."
+        desc_box.insert("1.0", desc_text)
+        desc_box.configure(state="disabled")
+
+        ctk.CTkLabel(right_frame, 
+                     text="Return this item to the admin. The admin will inspect its condition.", 
+                     text_color="gray", font=("Arial", 11, "italic")).grid(row=desc_idx+1, column=1, sticky="w", pady=(5, 10), padx=(10, 0))
+
+        btn_frame = ctk.CTkFrame(right_frame, fg_color="transparent")
+        btn_frame.grid(row=desc_idx+2, column=1, sticky="e", pady=(20, 0), padx=(10, 0))
+
+        ctk.CTkButton(btn_frame, text="Cancel", width=100, height=35,
+                      command=self.modal.destroy, fg_color=RED, 
+                      hover_color="#dc2626", font=("Arial", 12, "bold")).pack(side="left", padx=(0, 10))
+                      
+        ctk.CTkButton(btn_frame, text="Initiate Return", width=130, height=35,
+                      command=self._confirm_return, fg_color=GREEN, 
+                      hover_color="#16a34a", font=("Arial", 12, "bold")).pack(side="left")
 
     @staticmethod
     def _readonly_field(parent, label, value, multiline=False):
@@ -1200,26 +1260,21 @@ class ItemReturnModal:
         field.configure(state="disabled")
     
     def _confirm_return(self):
-        """Handle return confirmation."""
-        description = self.description_box.get("1.0", "end-1c").strip()
-        
-        if not description:
-            messagebox.showwarning("Validation", "Please provide a return description.",
-                                 parent=self.modal)
-            return
-        
+        """Notify the admin that the item is ready to be returned."""
         if not messagebox.askyesno("Confirm Return", 
                                    f"Confirm return of '{self.request['item_name']}'?",
                                    parent=self.modal):
             return
         
         try:
-            RequestRepository().request_return(self.request["request_id"])
-            messagebox.showinfo("Success", f"Your return for '{self.request['item_name']}' has been submitted.")
+            changed = RequestRepository().request_return(self.request["request_id"])
+            if not changed:
+                raise ValueError("The return request could not be submitted.")
+            messagebox.showinfo("Success", f"Return initiated for '{self.request['item_name']}'.")
             self.modal.destroy()
             dashboard.requests = load_my_requests()
             dashboard._load_items_cards()
-        except mysql.connector.Error as error:
+        except (ValueError, mysql.connector.Error) as error:
             messagebox.showerror("Return Error", str(error), parent=self.modal)
 
 
@@ -1287,7 +1342,6 @@ class ViewDetailsModal:
     
     def __init__(self, parent, item):
         self.item = item
-        
         self.modal = ctk.CTkToplevel(parent)
         self.modal.title("Item Details")
         self.modal.geometry("800x450")
@@ -1295,36 +1349,29 @@ class ViewDetailsModal:
         self.modal.transient(parent)
         self.modal.grab_set()
         self.modal.protocol("WM_DELETE_WINDOW", self.modal.destroy)
-        
-        # Center the modal
         self.modal.update_idletasks()
         x = (self.modal.winfo_screenwidth() // 2) - 400
         y = (self.modal.winfo_screenheight() // 2) - 225
         self.modal.geometry(f"+{x}+{y}")
         
-        # Inner white card with padding
         card = ctk.CTkFrame(self.modal, width=740, height=400,
                             fg_color=WHITE, corner_radius=8,
                             border_width=1, border_color="#d1d5db")
         card.place(relx=0.5, rely=0.5, anchor="center")
         
-        # Title at top of card
         ctk.CTkLabel(card, text="Item Details", text_color=TEXT_BLUE,
                      font=MODAL_TITLE_FONT).pack(anchor="w", padx=20, pady=(14, 8))
         
-        # Two-column grid inside the card
         content = ctk.CTkFrame(card, fg_color="transparent")
         content.pack(fill="both", expand=True, padx=20, pady=(0, 14))
         content.grid_columnconfigure(0, weight=0, minsize=220)
         content.grid_columnconfigure(1, weight=1)
         content.grid_rowconfigure(0, weight=1)
         
-        # --- LEFT COLUMN: image, item name, item code ---
         left = ctk.CTkFrame(content, fg_color="#f3f4f6", corner_radius=8)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
         left.grid_rowconfigure(0, weight=1)
-        
-        # Image preview
+
         image_frame = ctk.CTkFrame(left, width=200, height=160, fg_color=WHITE, corner_radius=6)
         image_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=(10, 6))
         image_frame.grid_propagate(False)
@@ -1341,16 +1388,14 @@ class ViewDetailsModal:
                 image_label.image = detail_image
             except (OSError, ValueError):
                 pass
-        
-        # Item name and code below image
+
         ctk.CTkLabel(left, text=item.item_name, text_color=TEXT_BLUE,
                      font=("Arial", 13, "bold"), wraplength=200) \
             .grid(row=1, column=0, padx=10, pady=(2, 2))
         ctk.CTkLabel(left, text=f"Code: {item.item_code}",
                      text_color="#4b5563", font=("Arial", 11)) \
             .grid(row=2, column=0, padx=10, pady=(0, 10))
-        
-        # --- RIGHT COLUMN: detail fields ---
+
         right = ctk.CTkFrame(content, fg_color="transparent")
         right.grid(row=0, column=1, sticky="nsew")
         right.grid_columnconfigure(1, weight=1)
@@ -1373,7 +1418,6 @@ class ViewDetailsModal:
             self._readonly_field(fields_frame, label, value, row=field_row)
             field_row += 1
         
-        # Description as multiline
         self._readonly_field(
             fields_frame, "Description",
             item.description or "No description available.",
@@ -1381,7 +1425,6 @@ class ViewDetailsModal:
         )
         field_row += 1
         
-        # Expiration date for consumables
         if item.expiration_date and (
             item.category_name.strip().lower() in {"consumables", "consumable"}
             or "perish" in item.category_name.lower()
@@ -1390,12 +1433,10 @@ class ViewDetailsModal:
                                  row=field_row)
             field_row += 1
         
-        # Serial No. if available
         if item.serial_no:
             self._readonly_field(fields_frame, "Serial No.", item.serial_no,
                                  row=field_row)
         
-        # Close button at bottom right
         close_btn = ctk.CTkButton(right, text="Close", width=100, height=32,
                                   command=self.modal.destroy,
                                   fg_color=BLUE, hover_color="#1e40af", corner_radius=6,
@@ -1442,41 +1483,35 @@ class ItemRequestModal:
         
         self.modal = ctk.CTkToplevel(parent)
         self.modal.title("Item Request")
-        self.modal.geometry("800x450")
+        self.modal.geometry("800x650")
         self.modal.configure(fg_color=DARK_BLUE)
         self.modal.transient(parent)
         self.modal.grab_set()
         self.modal.protocol("WM_DELETE_WINDOW", self.modal.destroy)
         
-        # Center the modal
         self.modal.update_idletasks()
         x = (self.modal.winfo_screenwidth() // 2) - 400
         y = (self.modal.winfo_screenheight() // 2) - 225
         self.modal.geometry(f"+{x}+{y}")
         
-        # Inner white card with padding
         card = ctk.CTkFrame(self.modal, width=740, height=400,
                             fg_color=WHITE, corner_radius=8,
                             border_width=1, border_color="#d1d5db")
         card.place(relx=0.5, rely=0.5, anchor="center")
         
-        # Title at top of card
         ctk.CTkLabel(card, text="Item Request", text_color=TEXT_BLUE,
                      font=MODAL_TITLE_FONT).pack(anchor="w", padx=20, pady=(14, 8))
         
-        # Two-column grid inside the card
         content = ctk.CTkFrame(card, fg_color="transparent")
         content.pack(fill="both", expand=True, padx=20, pady=(0, 14))
         content.grid_columnconfigure(0, weight=0, minsize=220)
         content.grid_columnconfigure(1, weight=1)
         content.grid_rowconfigure(0, weight=1)
         
-        # --- LEFT COLUMN: image, item name, item code ---
         left = ctk.CTkFrame(content, fg_color="#f3f4f6", corner_radius=8)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
         left.grid_rowconfigure(0, weight=1)
         
-        # Image preview
         image_frame = ctk.CTkFrame(left, width=200, height=160, fg_color=WHITE, corner_radius=6)
         image_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=(10, 6))
         image_frame.grid_propagate(False)
@@ -1494,7 +1529,6 @@ class ItemRequestModal:
             except (OSError, ValueError):
                 pass
         
-        # Item name and code below image
         ctk.CTkLabel(left, text=item.item_name, text_color=TEXT_BLUE,
                      font=("Arial", 13, "bold"), wraplength=200) \
             .grid(row=1, column=0, padx=10, pady=(2, 2))
@@ -1502,7 +1536,6 @@ class ItemRequestModal:
                      text_color="#4b5563", font=("Arial", 11)) \
             .grid(row=2, column=0, padx=10, pady=(0, 10))
         
-        # --- RIGHT COLUMN: detail fields + inputs + buttons ---
         right = ctk.CTkFrame(content, fg_color="transparent")
         right.grid(row=0, column=1, sticky="nsew")
         right.grid_columnconfigure(1, weight=1)
@@ -1524,7 +1557,6 @@ class ItemRequestModal:
             ViewDetailsModal._readonly_field(fields_frame, label, value, row=field_row)
             field_row += 1
         
-        # Description as multiline
         ViewDetailsModal._readonly_field(
             fields_frame, "Description",
             item.description or "No description available.",
@@ -1532,22 +1564,18 @@ class ItemRequestModal:
         )
         field_row += 1
         
-        # Expiration date for consumables
         if item.expiration_date:
             ViewDetailsModal._readonly_field(
                 fields_frame, "Expiration Date", item.expiration_date, row=field_row
             )
             field_row += 1
         
-        # Serial No. if available
         if item.serial_no:
             ViewDetailsModal._readonly_field(
                 fields_frame, "Serial No.", item.serial_no, row=field_row
             )
             field_row += 1
-        
-        # --- INPUT FIELDS ---
-        # Quantity
+
         ctk.CTkLabel(right, text="Quantity", text_color=TEXT_BLUE,
                      font=MODAL_FONT).pack(anchor="w", pady=(4, 1))
         validate_quantity = self.modal.register(self._validate_quantity)
@@ -1563,8 +1591,42 @@ class ItemRequestModal:
         self.quantity_entry.insert(0, "1")
         if item.category_name.strip().lower() in {"assets", "asset"}:
             self.quantity_entry.configure(state="disabled")
-        
-        # Unit/Serial No.
+
+        self.due_date_entry = None
+        if item.requires_return:
+            ctk.CTkLabel(
+                right, text="Due Date", text_color=TEXT_BLUE, font=MODAL_FONT,
+            ).pack(anchor="w", pady=(4, 1))
+            today = date.today()
+            self.due_date_entry = DateEntry(
+                right,
+                width=18,
+                date_pattern="yyyy-mm-dd",
+                mindate=today,
+                maxdate=today + timedelta(days=90),
+                background=TEXT_BLUE,
+                foreground=WHITE,
+                borderwidth=1,
+            )
+            self.due_date_entry.pack(fill="x", pady=(0, 6))
+            self.due_date_entry.set_date(today + timedelta(days=30))
+
+            def release_modal_grab(_event=None):
+                if self.modal.grab_current() == str(self.modal):
+                    self.modal.grab_release()
+
+            def restore_modal_grab(_event=None):
+                if self.modal.winfo_exists():
+                    self.modal.grab_set()
+                    self.modal.focus_set()
+
+            self.due_date_entry.bind(
+                "<Button-1>", release_modal_grab, add="+"
+            )
+            self.due_date_entry.bind(
+                "<<DateEntrySelected>>", restore_modal_grab, add="+"
+            )
+
         ctk.CTkLabel(right, text="Unit/Serial No.", text_color=TEXT_BLUE,
                      font=MODAL_FONT).pack(anchor="w", pady=(4, 1))
         
@@ -1583,7 +1645,6 @@ class ItemRequestModal:
         self.unit_combo.pack(fill="x", pady=(0, 6))
         self.unit_combo.set(unit_options[0])
         
-        # --- ACTION BUTTONS: side-by-side at bottom ---
         actions = ctk.CTkFrame(right, fg_color="transparent")
         actions.pack(fill="x", pady=(6, 0))
         actions.grid_columnconfigure((0, 1), weight=1)
@@ -1606,7 +1667,6 @@ class ItemRequestModal:
     
     def _send_request(self):
         """Validate and submit the item request."""
-        # Validate quantity
         qty_str = self.quantity_entry.get().strip()
         try:
             quantity = int(qty_str)
@@ -1645,6 +1705,17 @@ class ItemRequestModal:
 
         category = self.item.category_name.strip().lower()
         unit = self.unit_combo.get().strip().lower()
+        due_date = None
+        if self.item.requires_return:
+            due_date = self.due_date_entry.get_date()
+            today = date.today()
+            if due_date < today or due_date > today + timedelta(days=90):
+                messagebox.showwarning(
+                    "Invalid Due Date",
+                    "Items can only be borrowed for up to 3 months.",
+                    parent=self.modal,
+                )
+                return
         if category in {"assets", "asset"}:
             if quantity != 1:
                 messagebox.showerror(
@@ -1676,7 +1747,7 @@ class ItemRequestModal:
         
         try:
             RequestRepository().add_request(
-                self.item.item_id, current_user["user_id"], quantity
+                self.item.item_id, current_user["user_id"], quantity, due_date
             )
             
             messagebox.showinfo("Success",
@@ -1690,11 +1761,5 @@ class ItemRequestModal:
         except (ValueError, mysql.connector.Error) as e:
             messagebox.showerror("Error", f"Failed to submit request: {e}",
                                parent=self.modal)
-
-
-# ==========================================
-# INITIALIZE AND RUN
-# ==========================================
 dashboard = UserDashboard()
-
 app.mainloop()

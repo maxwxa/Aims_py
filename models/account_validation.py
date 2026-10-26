@@ -3,7 +3,6 @@ import re
 STUDENT_NUMBER_PATTERN = re.compile(r"^[A-Z]{2}\d{9}$")
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+$")
 
-
 def validate_email(email: str) -> None:
     if not EMAIL_PATTERN.fullmatch(email.strip()):
         raise ValueError("Email must contain a valid address with '@'.")
