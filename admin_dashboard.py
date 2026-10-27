@@ -499,7 +499,7 @@ def create_analytics_tab(parent_frame):
     log_header.pack(fill="x", padx=20, pady=(10, 0))
     log_header.pack_propagate(False)
     
-    ctk.CTkLabel(log_header, text="Recent System Activity", text_color=WHITE,
+    ctk.CTkLabel(log_header, text="System Logs", text_color=WHITE,
                  font=("Arial", 14, "bold")).pack(side="left", padx=15)
                  
     ctk.CTkButton(log_header, text="Refresh", width=80, height=26,
