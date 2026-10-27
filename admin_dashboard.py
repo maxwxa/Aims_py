@@ -1,17 +1,15 @@
 import os
 import subprocess
 import sys
-from datetime import datetime
-from tkinter import filedialog, ttk, messagebox
-
 import customtkinter as ctk
-import matplotlib.pyplot as plt
+import mysql.connector
+
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
-import mysql.connector
+from datetime import datetime
+from tkinter import filedialog, ttk, messagebox
 from PIL import Image
 from tkcalendar import DateEntry
-
 from models.users import Session
 from repositories import (
     InventoryRepository, CategoryRepository, RequestRepository, TransactionRepository,
@@ -20,11 +18,15 @@ from repositories import (
 from models.inventory import InventoryItem, Category
 from models.account_validation import validate_new_account, validate_password
 
-app = ctk.CTk()
-app.geometry("1920×1080")
-app.title("Academic Inventory Management System - Admin Dashboard")
-app.resizable(False, False)
 ctk.set_appearance_mode("light")
+app = ctk.CTk()
+app.geometry("1920x1080")
+app.title("Academic Inventory Management System - Admin Dashboard")
+try:
+    app.state("zoomed")
+except Exception:
+    pass
+app.after(100, lambda: app.state("zoomed"))
 
 if not Session.load():
     messagebox.showerror("Access Denied", "No active session found. Please log in.")
@@ -56,7 +58,6 @@ PURPLE = "#9333ea"
 main_bg = ctk.CTkFrame(app, fg_color=BG_BLUE, corner_radius=0)
 main_bg.pack(fill="both", expand=True)
 
-
 header_frame = ctk.CTkFrame(main_bg, height=70, fg_color=DARK_BLUE, corner_radius=0)
 header_frame.pack(fill="x", side="top")
 
@@ -73,15 +74,13 @@ ctk.CTkLabel(header_frame, text="Greetings, Admin", font=("Arial", 24, "bold"),
 
 def logout():
     LogoutConfirmationModal(app)
-
 logout_btn = ctk.CTkButton(header_frame, text="Log out", width=100, height=35, fg_color=RED, hover_color="#dc2626", corner_radius=8, font=("Arial", 14, "bold"), command=logout)
 logout_btn.pack(side="right", padx=20, pady=17)
-
 nav_frame = ctk.CTkFrame(main_bg, height=60, fg_color=WHITE, corner_radius=20)
 nav_frame.pack(fill="x", padx=20, pady=15)
 nav_frame.grid_columnconfigure(0, weight=1)
 nav_frame.grid_columnconfigure(6, weight=1)
-tabs = ["Analytics", "Inventory Managemt", "Requests", "Transactions", "Accounts"]
+tabs = ["Analytics", "Inventory", "Requests", "Transactions", "Accounts"]
 nav_buttons_frame = ctk.CTkFrame(nav_frame, fg_color="transparent")
 nav_buttons_frame.grid(row=0, column=1, sticky="ew", pady=12)
 nav_buttons_frame.grid_columnconfigure(tuple(range(len(tabs))), weight=1)
@@ -92,11 +91,11 @@ for i, tab in enumerate(tabs):
     btn = ctk.CTkButton(
         nav_buttons_frame,
         text=tab,
-        width=145,
-        height=35,
+        width=200,
+        height=50,
         fg_color=bg_color,
         corner_radius=6,
-        font=("Arial", 12, "bold"),
+        font=("Arial", 18, "bold"),
         command=lambda selected_tab=tab: show_tab(selected_tab),
     )
     btn.grid(row=0, column=i, padx=4, sticky="ew")
@@ -104,22 +103,31 @@ for i, tab in enumerate(tabs):
 
 def create_analytics_tab(parent_frame):
     repository = AnalyticsRepository()
-    frame = ctk.CTkFrame(parent_frame, fg_color=BG_BLUE, corner_radius=0)
+    frame = ctk.CTkScrollableFrame(parent_frame, fg_color=BG_BLUE, corner_radius=0)
     frame.pack(fill="both", expand=True)
+    
+    # --- SUMMARY CARDS (2 Rows, 3 Columns) ---
     cards = ctk.CTkFrame(frame, fg_color="transparent")
     cards.pack(fill="x", padx=20, pady=(20, 10))
     for column in range(3):
         cards.grid_columnconfigure(column, weight=1)
 
     card_values = {}
-    for column, (key, title) in enumerate((
+    card_configs = (
         ("total_stock", "Total Items"),
         ("pending_requests", "Pending Requests"),
         ("active_users", "Active Users"),
-    )):
+        ("active_requests", "Active Requests"), 
+        ("out_of_stock_count", "Out of Stock Count"),
+        ("due_for_return_count", "Due for Return Count")
+    )
+    
+    for index, (key, title) in enumerate(card_configs):
+        row = index // 3
+        column = index % 3
         card = ctk.CTkFrame(cards, fg_color=WHITE, corner_radius=8,
                             border_width=1, border_color="#d1d5db")
-        card.grid(row=0, column=column, sticky="ew", padx=5)
+        card.grid(row=row, column=column, sticky="ew", padx=5, pady=(0 if row == 0 else 10))
         ctk.CTkLabel(card, text=title, text_color=TEXT_BLUE,
                      font=("Arial", 12, "bold")).pack(anchor="w", padx=15, pady=(12, 2))
         value = ctk.CTkLabel(card, text="0", text_color=TEXT_BLUE,
@@ -128,81 +136,199 @@ def create_analytics_tab(parent_frame):
         card_values[key] = value
 
     charts = ctk.CTkFrame(frame, fg_color="transparent")
-    charts.pack(fill="both", expand=True, padx=20, pady=10)
+    charts.pack(fill="x", padx=20, pady=10)
     charts.grid_columnconfigure((0, 1), weight=1)
-    charts.grid_rowconfigure(0, weight=1)
+    
     left_chart = ctk.CTkFrame(charts, fg_color=WHITE, corner_radius=8,
-                              border_width=1, border_color="#d1d5db")
+                              border_width=1, border_color="#d1d5db", height=250)
     right_chart = ctk.CTkFrame(charts, fg_color=WHITE, corner_radius=8,
-                               border_width=1, border_color="#d1d5db")
+                               border_width=1, border_color="#d1d5db", height=250)
+    left_chart.pack_propagate(False)
+    right_chart.pack_propagate(False)
     left_chart.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
     right_chart.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+
+    alerts = ctk.CTkFrame(frame, fg_color="transparent")
+    alerts.pack(fill="x", padx=20, pady=(0, 10))
+    alerts.grid_columnconfigure((0, 1), weight=1)
+    
+    oos_frame = ctk.CTkFrame(alerts, fg_color=WHITE, corner_radius=8, border_width=1, border_color="#f87171")
+    oos_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+    ctk.CTkLabel(oos_frame, text="Out of Stock Items", text_color="#dc2626", font=("Arial", 14, "bold")).pack(pady=(10, 5))
+    oos_list = ctk.CTkScrollableFrame(oos_frame, fg_color="transparent", height=120)
+    oos_list.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+    
+    due_frame = ctk.CTkFrame(alerts, fg_color=WHITE, corner_radius=8, border_width=1, border_color="#fbbf24")
+    due_frame.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+    ctk.CTkLabel(due_frame, text="Items Due for Return", text_color="#d97706", font=("Arial", 14, "bold")).pack(pady=(10, 5))
+    due_list = ctk.CTkScrollableFrame(due_frame, fg_color="transparent", height=120)
+    due_list.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
     log_header = ctk.CTkFrame(frame, height=38, fg_color="#1c3b7a", corner_radius=8)
-    log_header.pack(fill="x", padx=20, pady=(0, 0))
+    log_header.pack(fill="x", padx=20, pady=(10, 0))
     log_header.pack_propagate(False)
+    
     ctk.CTkLabel(log_header, text="Recent System Activity", text_color=WHITE,
                  font=("Arial", 14, "bold")).pack(side="left", padx=15)
-    logs = ctk.CTkScrollableFrame(frame, fg_color=WHITE, corner_radius=8)
-    logs.pack(fill="both", expand=True, padx=20, pady=20)
+                 
+    ctk.CTkButton(log_header, text="Refresh", width=80, height=26,
+                  fg_color=WHITE, text_color="#1c3b7a", command=lambda: refresh()).pack(
+        side="right", padx=(5, 10), pady=6)
+        
+    action_var = ctk.StringVar(value="All Actions")
+    action_dropdown = ctk.CTkOptionMenu(log_header, variable=action_var, width=120, height=26,
+                                        values=["All Actions", "INSERT", "UPDATE", "DELETE"],
+                                        fg_color=WHITE, text_color="black", button_color="#d1d5db",
+                                        command=lambda e: filter_logs())
+    action_dropdown.pack(side="right", padx=5, pady=6)
+    
+    search_var = ctk.StringVar()
+    search_entry = ctk.CTkEntry(log_header, placeholder_text="Search logs...", 
+                                textvariable=search_var, width=150, height=26,
+                                fg_color=WHITE, text_color="black")
+    search_entry.pack(side="right", padx=5, pady=6)
+    search_entry.bind("<KeyRelease>", lambda e: filter_logs())
+
+    logs = ctk.CTkScrollableFrame(frame, fg_color=WHITE, corner_radius=8, height=250)
+    logs.pack(fill="x", padx=20, pady=20)
+
+    current_logs_data = []
+
+    def filter_logs():
+        for widget in logs.winfo_children():
+            widget.destroy()
+            
+        headers = ("Log ID", "User", "Action", "Table", "ID", "Date/Time")
+        for column, title in enumerate(headers):
+            ctk.CTkLabel(logs, text=title, fg_color="#dbeafe",
+                         text_color=TEXT_BLUE, anchor="w").grid(
+                row=0, column=column, sticky="ew", padx=1, pady=1)
+            logs.grid_columnconfigure(column, weight=1, minsize=90)
+            
+        search_term = search_var.get().lower()
+        active_action = action_var.get()
+        
+        row_index = 1
+        for row in current_logs_data:
+            log_id = str(row.get("log_id") or "")
+            user = str(row.get("user") or row.get("user_id") or "")
+            action = str(row.get("action") or "").upper()
+            table = str(row.get("table_affected") or "")
+            timestamp = str(row.get("timestamp") or "")
+            
+            target_id = str(row.get("item_id") or row.get("id") or "")
+            target_name = str(row.get("item_name") or row.get("name") or "")
+            desc = f"{target_id}" if target_id or target_name else str(row.get("description") or "")
+            
+            if active_action != "All Actions" and active_action != action: continue
+            if search_term and search_term not in f"{log_id} {user} {action} {table} {desc} {timestamp}".lower(): continue
+                
+            values = (log_id, user, action, table, desc, timestamp)
+            for column, value in enumerate(values):
+                ctk.CTkLabel(logs, text=value, fg_color=WHITE, text_color="black", anchor="w").grid(
+                    row=row_index, column=column, sticky="ew", padx=1, pady=1)
+            row_index += 1
 
     def refresh():
+        nonlocal current_logs_data
         try:
             stats = repository.get_summary_stats()
             for key, label in card_values.items():
-                label.configure(text=str(stats[key]))
+                label.configure(text=str(stats.get(key, "0")))
+            for widget in oos_list.winfo_children(): widget.destroy()
+            for widget in due_list.winfo_children(): widget.destroy()
+            
+            oos_items = repository.get_out_of_stock_items() 
+            due_items = repository.get_due_items()
+            if not oos_items:
+                ctk.CTkLabel(oos_list, text="No items out of stock.", text_color="gray").pack(pady=10)
+            else:
+                for item in oos_items:
+                    card = ctk.CTkFrame(oos_list, fg_color="#f3f4f6", corner_radius=6)
+                    card.pack(fill="x", pady=2, padx=2)
+                    
+                    img_path = item.get("image_path") # Update key to match your DB column
+                    ctk_img = None
+                    if img_path and os.path.exists(img_path):
+                        try:
+                            ctk_img = ctk.CTkImage(light_image=Image.open(img_path), size=(40, 40))
+                        except Exception:
+                            pass
+                            
+                    img_label = ctk.CTkLabel(card, text="No Img" if not ctk_img else "", image=ctk_img, 
+                                             width=40, height=40, fg_color="#e5e7eb", corner_radius=4)
+                    img_label.pack(side="left", padx=5, pady=5)
+                    
+                    details = ctk.CTkFrame(card, fg_color="transparent")
+                    details.pack(side="left", fill="x", expand=True, padx=(5, 5))
+                    ctk.CTkLabel(details, text=item.get("item_name", "Unknown"), font=("Arial", 12, "bold"), text_color="black", anchor="w").pack(fill="x")
+                    ctk.CTkLabel(details, text=f"ID: {item.get('item_id', 'N/A')} | Stock: {item.get('stock', 0)}", font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x")
+
+            if not due_items:
+                ctk.CTkLabel(due_list, text="No items currently due.", text_color="gray").pack(pady=10)
+            else:
+                for item in due_items:
+                    card = ctk.CTkFrame(due_list, fg_color="#f3f4f6", corner_radius=6)
+                    card.pack(fill="x", pady=2, padx=2)
+                    
+                    img_path = item.get("image_path")
+                    ctk_img = None
+                    if img_path and os.path.exists(img_path):
+                        try:
+                            ctk_img = ctk.CTkImage(light_image=Image.open(img_path), size=(40, 40))
+                        except Exception:
+                            pass
+                            
+                    img_label = ctk.CTkLabel(card, text="No Img" if not ctk_img else "", image=ctk_img, 
+                                             width=40, height=40, fg_color="#e5e7eb", corner_radius=4)
+                    img_label.pack(side="left", padx=5, pady=5)
+                    
+                    details = ctk.CTkFrame(card, fg_color="transparent")
+                    details.pack(side="left", fill="x", expand=True, padx=(5, 5))
+                    ctk.CTkLabel(details, text=item.get("item_name", "Unknown"), font=("Arial", 12, "bold"), text_color="black", anchor="w").pack(fill="x")
+                    ctk.CTkLabel(details, text=f"Req ID: {item.get('request_id', 'N/A')} | Due: {item.get('due_date', 'Unknown')}", font=("Arial", 10), text_color="#d97706", anchor="w").pack(fill="x")
+
             top_items = repository.get_top_requested_items()
             category_data = repository.get_category_request_distribution()
+            
             for widget in left_chart.winfo_children() + right_chart.winfo_children():
                 widget.destroy()
+                
             item_names = [row["item_name"] for row in top_items]
             item_counts = [row["request_count"] for row in top_items]
-            figure = Figure(figsize=(4, 2.2), dpi=90)
-            figure.patch.set_alpha(0)
-            axis = figure.add_subplot(111)
-            axis.bar(item_names, item_counts, color="#1c3b7a")
-            axis.set_title("Most Requested Items")
-            axis.tick_params(axis="x", rotation=25, labelsize=8)
-            figure.tight_layout()
-            canvas = FigureCanvasTkAgg(figure, master=left_chart)
-            canvas.draw()
-            canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
+            figure1 = Figure(figsize=(4, 2.2), dpi=90)
+            figure1.patch.set_alpha(0)
+            axis1 = figure1.add_subplot(111)
+            axis1.bar(item_names, item_counts, color="#1c3b7a")
+            axis1.set_title("Most Requested Items")
+            axis1.tick_params(axis="x", rotation=25, labelsize=8)
+            figure1.tight_layout()
+            canvas1 = FigureCanvasTkAgg(figure1, master=left_chart)
+            canvas1.draw()
+            canvas1.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
+            
             labels = [row["category_name"] for row in category_data]
             counts = [row["request_count"] for row in category_data]
-            figure = Figure(figsize=(4, 2.2), dpi=90)
-            figure.patch.set_alpha(0)
-            axis = figure.add_subplot(111)
+            figure2 = Figure(figsize=(4, 2.2), dpi=90)
+            figure2.patch.set_alpha(0)
+            axis2 = figure2.add_subplot(111)
             if counts:
-                axis.pie(counts, labels=labels, autopct="%1.1f%%")
-            axis.set_title("Most Requested Categories")
-            figure.tight_layout()
-            canvas = FigureCanvasTkAgg(figure, master=right_chart)
-            canvas.draw()
-            canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
-            for widget in logs.winfo_children():
-                widget.destroy()
-            headers = ("Log ID", "User", "Action", "Table", "Description", "Date/Time")
-            for column, title in enumerate(headers):
-                ctk.CTkLabel(logs, text=title, fg_color="#dbeafe",
-                             text_color=TEXT_BLUE, anchor="w").grid(
-                    row=0, column=column, sticky="ew", padx=1, pady=1)
-                logs.grid_columnconfigure(column, weight=1, minsize=90)
-            for row_index, row in enumerate(repository.get_recent_logs(), 1):
-                values = (row.get("log_id"), row.get("user") or row.get("user_id"),
-                          row.get("action"), row.get("table_affected"),
-                          row.get("description"), row.get("timestamp"))
-                for column, value in enumerate(values):
-                    ctk.CTkLabel(logs, text=str(value or ""), fg_color=WHITE,
-                                 text_color="black", anchor="w").grid(
-                        row=row_index, column=column, sticky="ew", padx=1, pady=1)
+                axis2.pie(counts, labels=labels, autopct="%1.1f%%")
+            axis2.set_title("Most Requested Categories")
+            figure2.tight_layout()
+            canvas2 = FigureCanvasTkAgg(figure2, master=right_chart)
+            canvas2.draw()
+            canvas2.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
+            
+            # 4. Logs
+            current_logs_data = repository.get_recent_logs()
+            filter_logs()
+            
         except (ValueError, mysql.connector.Error) as error:
-            messagebox.showerror("Analytics Unavailable", str(error), parent=app)
-
-    ctk.CTkButton(log_header, text="Refresh", width=80, height=26,
-                  fg_color=WHITE, text_color="#1c3b7a", command=refresh).pack(
-        side="right", padx=10, pady=6)
+            messagebox.showerror("Analytics Unavailable", str(error))
+            
     refresh()
     return frame
-
 
 content_frame = create_analytics_tab(main_bg)
 
@@ -211,6 +337,7 @@ style.theme_use("default")
 style.configure("Treeview", background=WHITE, foreground="black", rowheight=25, fieldbackground=WHITE, borderwidth=0)
 style.configure("Treeview.Heading", background=BG_BLUE, foreground="black", font=('Arial', 10, 'bold'))
 style.map('Treeview', background=[('selected', '#dbeafe')])
+
 
 def create_inventory_tab(parent_frame):
     inventory_repo = InventoryRepository()
@@ -298,7 +425,6 @@ def create_inventory_tab(parent_frame):
 
     def manage_item(item_id):
         print(f"Opening manage modal for item ID: {item_id}")
-
     return inventory_frame
 
 
@@ -1025,8 +1151,7 @@ def create_requests_tab(parent_frame):
     refresh_button.pack(side="left", padx=5)
     filter_combo = ctk.CTkComboBox(
         toolbar_frame, width=120, height=30, values=["All", "Pending", "Approved",
-                                                 "Active", "Return Requested", "Cancelled",
-                                                 "Returned"],
+                                                 "Active"],
         fg_color=WHITE, text_color="black", button_color=WHITE, corner_radius=6,
     )
     filter_combo.set("All")
@@ -1036,7 +1161,6 @@ def create_requests_tab(parent_frame):
         corner_radius=6, placeholder_text="Search",
     )
     search_entry.pack(side="left", padx=5)
-
     column_specs = (
         (0, 1, 100), (1, 2, 150), (2, 1, 100), (3, 1, 110),
         (4, 2, 180), (5, 1, 140), (6, 1, 130),
@@ -1607,7 +1731,7 @@ def create_transactions_tab(parent_frame):
         load_rows()
 
     toggle = ctk.CTkButton(header, text="ARCHIVE", width=90, height=30,
-                           fg_color="#1c3b7a", hover_color="#254b91",
+                           fg_color="#507ace", hover_color="#254b91",
                            corner_radius=6, command=lambda: switch_mode())
     toggle.pack(side="left", padx=10)
     toolbar = ctk.CTkFrame(header, fg_color="transparent")
@@ -2224,7 +2348,7 @@ def create_accounts_tab(parent_frame):
     ctk.CTkLabel(header, text="Accounts", text_color=WHITE,
                  font=("Arial", 16, "bold")).pack(side="left", padx=15)
     toggle = ctk.CTkButton(header, text="ARCHIVE", width=90, height=30,
-                           fg_color="#1c3b7a", corner_radius=6)
+                           fg_color="#779adf", corner_radius=6)
     toggle.pack(side="left", padx=10)
     toolbar = ctk.CTkFrame(header, fg_color="transparent")
     toolbar.pack(side="right", padx=20)
@@ -2459,7 +2583,7 @@ def show_tab(selected_tab):
         transactions_frame.pack_forget()
         accounts_frame.pack_forget()
         content_frame.pack(fill="both", expand=True, padx=20, pady=20)
-    elif selected_tab == "Inventory Managemt":
+    elif selected_tab == "Inventory":
         content_frame.pack_forget()
         requests_frame.pack_forget()
         transactions_frame.pack_forget()

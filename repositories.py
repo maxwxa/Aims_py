@@ -1578,7 +1578,6 @@ class TransactionRepository(BaseRepository):
         finally:
             cursor.close()
 
-
 class AnalyticsRepository:
     def __init__(self):
         self._db = DatabaseManager.get_instance()
@@ -1624,13 +1623,15 @@ class AnalyticsRepository:
     def get_summary_stats(self) -> Dict[str, int]:
         conn = self._db.get_connection()
         cursor = conn.cursor(dictionary=True)
+        # Note: Adjust 'Approved' to whatever status you use for active/borrowed items
         cursor.execute(
             """SELECT
                    (SELECT COALESCE(SUM(stock), 0) FROM inventory_items) AS total_stock,
-                   (SELECT COUNT(*) FROM item_requests
-                    WHERE request_status='Pending') AS pending_requests,
-                   (SELECT COUNT(*) FROM user_account
-                    WHERE status='Active') AS active_users"""
+                   (SELECT COUNT(*) FROM item_requests WHERE request_status='Pending') AS pending_requests,
+                   (SELECT COUNT(*) FROM user_account WHERE status='Active') AS active_users,
+                   (SELECT COUNT(*) FROM item_requests WHERE request_status='Approved') AS active_requests,
+                   (SELECT COUNT(*) FROM inventory_items WHERE stock <= 0) AS out_of_stock_count,
+                   (SELECT COUNT(*) FROM item_requests WHERE request_status='Approved' AND due_date <= CURRENT_DATE) AS due_for_return_count"""
         )
         row = cursor.fetchone() or {}
         cursor.close()
@@ -1638,17 +1639,49 @@ class AnalyticsRepository:
             "total_stock": int(row.get("total_stock", 0)),
             "pending_requests": int(row.get("pending_requests", 0)),
             "active_users": int(row.get("active_users", 0)),
+            "active_requests": int(row.get("active_requests", 0)),
+            "out_of_stock_count": int(row.get("out_of_stock_count", 0)),
+            "due_for_return_count": int(row.get("due_for_return_count", 0))
         }
+
+    def get_out_of_stock_items(self) -> List[Dict[str, Any]]:
+        conn = self._db.get_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            """SELECT item_id, item_name, stock 
+               FROM inventory_items 
+               WHERE stock <= 0 
+               ORDER BY item_name ASC"""
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        return rows
+
+    def get_due_items(self) -> List[Dict[str, Any]]:
+        conn = self._db.get_connection()
+        cursor = conn.cursor(dictionary=True)
+        # Assuming 'Approved' is the status for items currently checked out
+        cursor.execute(
+            """SELECT ir.request_id, ii.item_name, ir.due_date
+               FROM item_requests ir
+               JOIN inventory_items ii ON ir.item_id = ii.item_id
+               WHERE ir.request_status = 'Approved' AND ir.due_date <= CURRENT_DATE
+               ORDER BY ir.due_date ASC"""
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        return rows
 
     def get_recent_logs(self, limit: int = 50) -> List[Dict[str, Any]]:
         if limit < 1:
             raise ValueError("Limit must be at least 1.")
         conn = self._db.get_connection()
         cursor = conn.cursor(dictionary=True)
+        # Changed sl.record_id AS description to AS item_id to support the UI's ID formatting
         cursor.execute(
             """SELECT sl.log_id, sl.user_id, ua.gmail AS user,
                       sl.action, sl.table_affected,
-                      sl.record_id AS description, sl.timestamp
+                      sl.record_id AS item_id, sl.timestamp
                FROM system_logs sl
                LEFT JOIN user_account ua ON ua.user_id=sl.user_id
                ORDER BY sl.timestamp DESC

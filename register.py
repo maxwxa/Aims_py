@@ -13,11 +13,16 @@ from models.account_validation import (
     validate_student_number,
 )
 
+ctk.set_appearance_mode("light")
 app = ctk.CTk()
 app.geometry("900x550")
-app.title("register.py")
-app.resizable(False, False)
-ctk.set_appearance_mode("light")
+app.title("Academic Inventory Management System - Register")
+
+try:
+    app.state("zoomed")
+except Exception:
+    pass
+app.after(100, lambda: app.state("zoomed"))
 
 BLUE_BG = "#1e3a8a"
 TEXT_BLUE = "#2563eb"
@@ -82,108 +87,85 @@ department_data = {
     ]
 }
 
-main_bg = ctk.CTkFrame(app, width=900, height=550, fg_color=BLUE_BG, corner_radius=0)
+main_bg = ctk.CTkFrame(app, fg_color=BLUE_BG, corner_radius=0)
 main_bg.pack(fill="both", expand=True)
 
-card_frame = ctk.CTkFrame(main_bg, width=800, height=480, fg_color=CARD_GRAY, corner_radius=15)
+card_frame = ctk.CTkFrame(main_bg, width=1050, height=660, fg_color=CARD_GRAY, corner_radius=15)
 card_frame.place(relx=0.5, rely=0.5, anchor="center")
 
-ctk.CTkLabel(card_frame, text="Create Your Account", font=("Arial", 28, "bold"), text_color=TEXT_BLUE).place(relx=0.5, y=30, anchor="n")
+ctk.CTkLabel(card_frame, text="Create Your Account", font=("Arial", 32, "bold"), text_color=TEXT_BLUE).place(relx=0.5, y=35, anchor="n")
 
-form_frame = ctk.CTkFrame(card_frame, width=720, height=340, fg_color=CARD_GRAY, corner_radius=10, border_width=2, border_color="black")
-form_frame.place(relx=0.5, y=80, anchor="n")
+form_frame = ctk.CTkFrame(card_frame, width=980, height=480, fg_color=CARD_GRAY, corner_radius=10, border_width=2, border_color="black")
+form_frame.place(relx=0.5, y=95, anchor="n")
 
-ctk.CTkFrame(form_frame, width=2, height=336, fg_color="black").place(x=220, y=2)
+ctk.CTkFrame(form_frame, width=2, height=476, fg_color="black").place(x=280, y=2)
 
-left_section = ctk.CTkFrame(form_frame, width=216, height=336, fg_color=CARD_GRAY, corner_radius=0)
+left_section = ctk.CTkFrame(form_frame, width=276, height=476, fg_color=CARD_GRAY, corner_radius=0)
 left_section.place(x=2, y=2)
 
-ctk.CTkLabel(left_section, text="Account Information", font=("Arial", 14, "bold"), text_color=TEXT_BLUE).place(relx=0.5, y=10, anchor="n")
+ctk.CTkLabel(left_section, text="Account Information", font=("Arial", 16, "bold"), text_color=TEXT_BLUE).place(relx=0.5, y=15, anchor="n")
 
-ctk.CTkLabel(left_section, text="Email", font=("Arial", 11, "bold"), text_color="black").place(x=15, y=45)
-email_entry = ctk.CTkEntry(left_section, width=180, height=30, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black")
-email_entry.place(x=15, y=65)
+ctk.CTkLabel(left_section, text="Email", font=("Arial", 12, "bold"), text_color="black").place(x=25, y=65)
+email_entry = ctk.CTkEntry(left_section, width=225, height=35, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black")
+email_entry.place(x=25, y=90)
 
-ctk.CTkLabel(left_section, text="Password", font=("Arial", 11, "bold"), text_color="black").place(x=15, y=100)
-password_entry = ctk.CTkEntry(left_section, width=180, height=30, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black", show="*")
-password_entry.place(x=15, y=120)
+ctk.CTkLabel(left_section, text="Password", font=("Arial", 12, "bold"), text_color="black").place(x=25, y=140)
+password_entry = ctk.CTkEntry(left_section, width=225, height=35, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black", show="*")
+password_entry.place(x=25, y=165)
 
 def toggle_password():
     password_entry.configure(show="" if show_pass_var.get() == 1 else "*")
 
 show_pass_var = ctk.IntVar()
-ctk.CTkCheckBox(left_section, text="Show Password", variable=show_pass_var, command=toggle_password, font=("Arial", 11), checkbox_height=16, checkbox_width=16, border_color=BORDER_GRAY, fg_color=TEXT_BLUE, text_color="black").place(x=15, y=155)
+ctk.CTkCheckBox(left_section, text="Show Password", variable=show_pass_var, command=toggle_password, font=("Arial", 12), checkbox_height=18, checkbox_width=18, border_color=BORDER_GRAY, fg_color=TEXT_BLUE, text_color="black").place(x=25, y=210)
 
 logo_path = r"C:\Users\maxwx\OneDrive\Documents\SDF04-Aims\Assets\Aims_plain_black.png"
 try:
     if os.path.exists(logo_path):
         logo_img_data = Image.open(logo_path)
-        logo_image = ctk.CTkImage(light_image=logo_img_data, dark_image=logo_img_data, size=(120, 120))
-        ctk.CTkLabel(left_section, image=logo_image, text="").place(relx=0.5, y=240, anchor="center")
+        logo_image = ctk.CTkImage(light_image=logo_img_data, dark_image=logo_img_data, size=(150, 150))
+        ctk.CTkLabel(left_section, image=logo_image, text="").place(relx=0.5, y=340, anchor="center")
     else:
-        ctk.CTkLabel(left_section, text="[ A.I.M.S ]", text_color="gray", font=("Arial", 16, "bold")).place(relx=0.5, y=240, anchor="center")
+        ctk.CTkLabel(left_section, text="[ A.I.M.S ]", text_color="gray", font=("Arial", 20, "bold")).place(relx=0.5, y=340, anchor="center")
 except Exception as e:
     pass
 
-right_section = ctk.CTkFrame(form_frame, width=494, height=336, fg_color=CARD_GRAY, corner_radius=0)
-right_section.place(x=224, y=2)
+right_section = ctk.CTkFrame(form_frame, width=694, height=476, fg_color=CARD_GRAY, corner_radius=0)
+right_section.place(x=284, y=2)
 
-ctk.CTkLabel(right_section, text="Personal Information", font=("Arial", 14, "bold"), text_color=TEXT_BLUE).place(relx=0.5, y=10, anchor="n")
+ctk.CTkLabel(right_section, text="Personal Information", font=("Arial", 16, "bold"), text_color=TEXT_BLUE).place(relx=0.5, y=15, anchor="n")
+ctk.CTkLabel(right_section, text="First Name", font=("Arial", 12, "bold"), text_color="black").place(x=25, y=65)
+fname_entry = ctk.CTkEntry(right_section, width=200, height=35, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black")
+fname_entry.place(x=25, y=90)
 
-ctk.CTkLabel(right_section, text="First Name", font=("Arial", 11, "bold"), text_color="black").place(x=15, y=45)
-fname_entry = ctk.CTkEntry(right_section, width=145, height=30, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black")
-fname_entry.place(x=15, y=65)
+ctk.CTkLabel(right_section, text="Middle Name (Optional)", font=("Arial", 12, "bold"), text_color="black").place(x=245, y=65)
+mname_entry = ctk.CTkEntry(right_section, width=200, height=35, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black")
+mname_entry.place(x=245, y=90)
 
-ctk.CTkLabel(right_section, text="Middle Name (Optional)", font=("Arial", 11, "bold"), text_color="black").place(x=175, y=45)
-mname_entry = ctk.CTkEntry(right_section, width=145, height=30, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black")
-mname_entry.place(x=175, y=65)
+ctk.CTkLabel(right_section, text="Last Name", font=("Arial", 12, "bold"), text_color="black").place(x=465, y=65)
+lname_entry = ctk.CTkEntry(right_section, width=200, height=35, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black")
+lname_entry.place(x=465, y=90)
 
-ctk.CTkLabel(right_section, text="Last Name", font=("Arial", 11, "bold"), text_color="black").place(x=335, y=45)
-lname_entry = ctk.CTkEntry(right_section, width=145, height=30, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black")
-lname_entry.place(x=335, y=65)
+ctk.CTkLabel(right_section, text="Contact No.", font=("Arial", 12, "bold"), text_color="black").place(x=25, y=140)
+contact_entry = ctk.CTkEntry(right_section, width=200, height=35, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black")
+contact_entry.place(x=25, y=165)
 
-ctk.CTkLabel(right_section, text="Contact No.", font=("Arial", 11, "bold"), text_color="black").place(x=15, y=100)
-contact_entry = ctk.CTkEntry(right_section, width=145, height=30, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black")
-contact_entry.place(x=15, y=120)
-
-ctk.CTkLabel(right_section, text="Birthday", font=("Arial", 11, "bold"), text_color="black").place(x=175, y=100)
-
-bday_frame = ctk.CTkFrame(
-    right_section,
-    width=145,
-    height=30,
-    fg_color=WHITE,
-    corner_radius=8,
-    border_width=1,
-    border_color=BORDER_GRAY,
-)
-bday_frame.place(x=175, y=120)
+ctk.CTkLabel(right_section, text="Birthday", font=("Arial", 12, "bold"), text_color="black").place(x=245, y=140)
+bday_frame = ctk.CTkFrame(right_section, width=200, height=35, fg_color=WHITE, corner_radius=8, border_width=1, border_color=BORDER_GRAY)
+bday_frame.place(x=245, y=165)
 
 date_entry_style = ttk.Style(bday_frame)
-date_entry_style.configure(
-    "Birthday.TEntry",
-    padding=(6, 1),
-    font=("Arial", 11),
-)
+date_entry_style.configure("Birthday.TEntry", padding=(8, 4), font=("Arial", 12))
+bday_entry = DateEntry(bday_frame, background=WHITE, foreground="black", borderwidth=0, date_pattern="yyyy-mm-dd", state="readonly", font=("Arial", 12), style="Birthday.TEntry")
+bday_entry.pack(fill="both", expand=True, padx=2, pady=2)
 
-bday_entry = DateEntry(
-    bday_frame,
-    background=WHITE,
-    foreground="black",
-    borderwidth=0,
-    date_pattern="yyyy-mm-dd",
-    state="readonly",
-    font=("Arial", 11),
-    style="Birthday.TEntry",
-)
-bday_entry.pack(fill="both", expand=True, padx=2, pady=1)
-ctk.CTkLabel(right_section, text="Gender", font=("Arial", 11, "bold"), text_color="black").place(x=335, y=100)
-gender_combo = ctk.CTkComboBox(right_section, width=145, height=30, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black", button_color=BORDER_GRAY, button_hover_color="gray", values=["Male", "Female", "Other", "Prefer not to say"])
-gender_combo.place(x=335, y=120)
+ctk.CTkLabel(right_section, text="Gender", font=("Arial", 12, "bold"), text_color="black").place(x=465, y=140)
+gender_combo = ctk.CTkComboBox(right_section, width=200, height=35, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black", button_color=BORDER_GRAY, button_hover_color="gray", values=["Male", "Female", "Other", "Prefer not to say"])
+gender_combo.place(x=465, y=165)
 
-ctk.CTkLabel(right_section, text="Student No.", font=("Arial", 11, "bold"), text_color="black").place(x=15, y=155)
-student_no_entry = ctk.CTkEntry(right_section, width=145, height=30, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black")
-student_no_entry.place(x=15, y=175)
+ctk.CTkLabel(right_section, text="Student No.", font=("Arial", 12, "bold"), text_color="black").place(x=25, y=215)
+student_no_entry = ctk.CTkEntry(right_section, width=200, height=35, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black")
+student_no_entry.place(x=25, y=240)
 
 def update_courses(choice):
     courses = department_data.get(choice, [])
@@ -193,23 +175,25 @@ def update_courses(choice):
     else:
         course_combo.set("")
 
-ctk.CTkLabel(right_section, text="Department", font=("Arial", 11, "bold"), text_color="black").place(x=175, y=155)
-dept_combo = ctk.CTkComboBox(right_section, width=145, height=30, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black", button_color=BORDER_GRAY, button_hover_color="gray", values=list(department_data.keys()), command=update_courses)
-dept_combo.place(x=175, y=175)
+ctk.CTkLabel(right_section, text="Department", font=("Arial", 12, "bold"), text_color="black").place(x=245, y=215)
+dept_combo = ctk.CTkComboBox(right_section, width=200, height=35, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black", button_color=BORDER_GRAY, button_hover_color="gray", values=list(department_data.keys()), command=update_courses)
+dept_combo.place(x=245, y=240)
 
-ctk.CTkLabel(right_section, text="Course", font=("Arial", 11, "bold"), text_color="black").place(x=335, y=155)
-course_combo = ctk.CTkComboBox(right_section, width=145, height=30, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black", button_color=BORDER_GRAY, button_hover_color="gray", values=[])
-course_combo.place(x=335, y=175)
+ctk.CTkLabel(right_section, text="Course", font=("Arial", 12, "bold"), text_color="black").place(x=465, y=215)
+course_combo = ctk.CTkComboBox(right_section, width=200, height=35, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black", button_color=BORDER_GRAY, button_hover_color="gray", values=[])
+course_combo.place(x=465, y=240)
 
-ctk.CTkLabel(right_section, text="Address :", font=("Arial", 11, "bold"), text_color="black").place(x=15, y=210)
-address_textbox = ctk.CTkTextbox(right_section, width=465, height=90, corner_radius=8, border_width=1, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black")
-address_textbox.place(x=15, y=230)
+initial_dept = list(department_data.keys())[0]
+dept_combo.set(initial_dept)
+update_courses(initial_dept)
+
+ctk.CTkLabel(right_section, text="Address :", font=("Arial", 12, "bold"), text_color="black").place(x=25, y=290)
+address_textbox = ctk.CTkTextbox(right_section, width=640, height=130, corner_radius=8, border_width=1, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black")
+address_textbox.place(x=25, y=315)
 
 def open_login():
     app.destroy()
     subprocess.Popen([sys.executable, "main.py"])
-
-ctk.CTkButton(card_frame, text="Back to Login", width=120, height=35, fg_color=CARD_GRAY, text_color=TEXT_BLUE, border_color=TEXT_BLUE, border_width=1, hover_color="#eff6ff", corner_radius=8, font=("Arial", 12, "bold"), command=open_login).place(x=545, y=430)
 
 def register_user():
     email = email_entry.get().strip().lower()
@@ -249,7 +233,6 @@ def register_user():
         )
         cursor = conn.cursor()
 
-    
         cursor.execute(
             "SELECT user_id FROM user_account WHERE LOWER(TRIM(gmail)) = %s",
             (email,),
@@ -272,13 +255,10 @@ def register_user():
             return
 
         creation_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        
         hashed_password = hash_password(password)
         
         user_sql = "INSERT INTO user_account (gmail, password_hash, role, creationdate) VALUES (%s, %s, %s, %s)"
-        
         cursor.execute(user_sql, (email, hashed_password, "Student", creation_date))
-        
         new_user_id = cursor.lastrowid
         
         info_sql = """
@@ -305,6 +285,7 @@ def register_user():
             cursor.close()
             conn.close()
 
-ctk.CTkButton(card_frame, text="Register", width=120, height=35, fg_color=TEXT_BLUE, hover_color="#1d4ed8", corner_radius=8, font=("Arial", 12, "bold"), command=register_user).place(x=675, y=430)
+ctk.CTkButton(card_frame, text="Back to Login", width=140, height=40, fg_color=CARD_GRAY, text_color=TEXT_BLUE, border_color=TEXT_BLUE, border_width=1, hover_color="#eff6ff", corner_radius=8, font=("Arial", 14, "bold"), command=open_login).place(x=35, y=595)
+ctk.CTkButton(card_frame, text="Register", width=140, height=40, fg_color=TEXT_BLUE, hover_color="#1d4ed8", corner_radius=8, font=("Arial", 14, "bold"), command=register_user).place(x=875, y=595)
 
 app.mainloop()

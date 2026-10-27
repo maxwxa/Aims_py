@@ -29,13 +29,17 @@ GREEN = "#84cc16"
 BLUE = "#1d4ed8"
 PURPLE = "#9333ea"
 
+ctk.set_appearance_mode("light")
+
 app = ctk.CTk()
 app.geometry("1000x650")
 app.title("Academic Inventory Management System - User Dashboard")
-app.resizable(False, False)
-ctk.set_appearance_mode("light")
+try:
+    app.state("zoomed")
+except Exception:
+    pass
+app.after(100, lambda: app.state("zoomed"))
 
-# Session validation
 if not Session.load():
     messagebox.showerror("Access Denied", "No active session found. Please log in.")
     app.destroy()
@@ -52,7 +56,6 @@ if user_role not in {"user", "student"}:
     subprocess.Popen([sys.executable, os.path.join(os.path.dirname(__file__), "main.py")])
     sys.exit()
 
-
 def load_my_requests():
     """Load user's item requests from the database with inventory details."""
     try:
@@ -60,7 +63,6 @@ def load_my_requests():
     except mysql.connector.Error as e:
         print(f"Error loading requests: {e}")
         return []
-
 
 def load_notifications():
     """Load user's notifications from the database."""
@@ -161,11 +163,11 @@ class UserDashboard:
             btn = ctk.CTkButton(
                 buttons_frame,
                 text=tab,
-                width=145,
-                height=35,
+                width=200,
+                height=50,
                 fg_color=bg_color,
                 corner_radius=6,
-                font=("Arial", 12, "bold"),
+                font=("Arial", 18, "bold"),
                 command=lambda selected_tab=tab: self._show_tab(selected_tab),
             )
             btn.grid(row=0, column=i, padx=4, sticky="ew")
@@ -182,7 +184,6 @@ class UserDashboard:
             self.content_frames[tab] = frame
     
     def _create_home_tab(self):
-        """Create the Home tab with Items and Notifications panels."""
         home_frame = ctk.CTkFrame(self.main_bg, fg_color=DARK_BLUE, corner_radius=8,
                                   border_width=1, border_color="#d1d5db")
     
@@ -191,6 +192,7 @@ class UserDashboard:
         inner_frame.grid_columnconfigure(0, weight=5)
         inner_frame.grid_columnconfigure(1, weight=4)
         inner_frame.grid_rowconfigure(0, weight=1)
+        
         items_panel = ctk.CTkFrame(inner_frame, fg_color=WHITE, corner_radius=8,
                                    border_width=1, border_color="#d1d5db")
         items_panel.grid(row=0, column=0, sticky="nsew", padx=(10, 5), pady=10)
@@ -200,19 +202,25 @@ class UserDashboard:
         items_header.pack_propagate(False)
         
         ctk.CTkLabel(items_header, text="Items",
-                    font=("Arial", 16, "bold"), text_color=WHITE).pack(
-                        side="left", padx=15, pady=10
-                    )
+                     font=("Arial", 16, "bold"), text_color=WHITE).pack(
+                         side="left", padx=15, pady=10
+                     )
         
         items_toolbar = ctk.CTkFrame(items_header, fg_color="transparent")
         items_toolbar.pack(side="right", padx=15)
         
+        self.items_refresh = ctk.CTkButton(items_toolbar, text="Refresh", width=70, height=30,
+                                           corner_radius=6, fg_color=WHITE, text_color="black",
+                                           command=self._load_items_cards)
+        self.items_refresh.pack(side="left", padx=(0, 10))
+        
         ctk.CTkLabel(items_toolbar, text="Search:", 
-                    font=("Arial", 12, "bold"), text_color=WHITE).pack(side="left", padx=(0, 4))
+                     font=("Arial", 12, "bold"), text_color=WHITE).pack(side="left", padx=(0, 4))
         self.items_search = ctk.CTkEntry(items_toolbar, width=130, height=30,
                                          corner_radius=6, fg_color=WHITE, text_color="black")
         self.items_search.pack(side="left", padx=(0, 0))
         self.items_search.bind("<KeyRelease>", lambda e: self._filter_items())
+        
         self.items_scroll = ctk.CTkScrollableFrame(items_panel, fg_color=WHITE,
                                                    corner_radius=0)
         self.items_scroll.pack(fill="both", expand=True, padx=15, pady=15)
@@ -228,15 +236,20 @@ class UserDashboard:
         notif_header.pack_propagate(False)
         
         ctk.CTkLabel(notif_header, text="Notifications",
-                    font=("Arial", 16, "bold"), text_color=WHITE).pack(
-                        side="left", padx=15, pady=10
-                    )
+                     font=("Arial", 16, "bold"), text_color=WHITE).pack(
+                         side="left", padx=15, pady=10
+                     )
         
         notif_toolbar = ctk.CTkFrame(notif_header, fg_color="transparent")
         notif_toolbar.pack(side="right", padx=15)
         
+        self.notif_refresh = ctk.CTkButton(notif_toolbar, text="Refresh", width=70, height=30,
+                                           corner_radius=6, fg_color=WHITE, text_color="black",
+                                           command=self._load_notifications_list)
+        self.notif_refresh.pack(side="left", padx=(0, 10))
+        
         ctk.CTkLabel(notif_toolbar, text="Search:", 
-                    font=("Arial", 12, "bold"), text_color=WHITE).pack(side="left", padx=(0, 4))
+                     font=("Arial", 12, "bold"), text_color=WHITE).pack(side="left", padx=(0, 4))
         self.notif_search = ctk.CTkEntry(notif_toolbar, width=130, height=30,
                                          corner_radius=6, fg_color=WHITE, text_color="black")
         self.notif_search.pack(side="left", padx=(0, 0))
@@ -1795,7 +1808,6 @@ class ItemRequestModal:
                               f"Request for '{self.item.item_name}' has been submitted.")
             self.modal.destroy()
             
-            # Refresh the dashboard home tab data
             dashboard.requests = load_my_requests()
             dashboard._load_items_cards()
             
