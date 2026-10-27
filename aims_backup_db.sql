@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Oct 26, 2026 at 07:03 PM
+-- Generation Time: Oct 27, 2026 at 10:03 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -85,14 +85,16 @@ CREATE TABLE `inventory_items` (
 --
 
 INSERT INTO `inventory_items` (`item_id`, `category_id`, `item_name`, `item_code`, `description`, `stock`, `serial_no`, `unit`, `added_date`, `updated_date`, `expiration_date`, `image_path`) VALUES
-(1, 3, 'Chef Uniform w/ Hat (Small)', 'ISHTM-A-1S', '(Unisex) A crisp, double-breasted white chef\'s jacket with a Mandarin collar and ¾-length sleeves with folded cuffs.', 100, '', 'set', '2026-10-26 21:34:48', '2026-10-26 22:04:11', NULL, NULL),
-(2, 3, 'Chef Uniform w/ Hat (Medium)', 'ISHTM-A-2M', '(Unisex) A crisp, double-breasted white chef\'s jacket with a Mandarin collar and ¾-length sleeves with folded cuffs.', 100, '', 'set', '2026-10-26 21:38:20', '2026-10-26 22:04:21', NULL, NULL),
-(3, 3, 'Chef Uniform w/ Hat (Large)', 'ISHTM-A-3L', '(Unisex) A crisp, double-breasted white chef\'s jacket with a Mandarin collar and ¾-length sleeves with folded cuffs.', 100, '', 'set', '2026-10-26 21:39:52', '2026-10-26 22:04:28', NULL, NULL),
-(4, 1, 'Lenovo Laptop', 'CCS-LAP1', 'Lenovo ThinkPad laptop, angled at 45 degrees to capture both its ultrathin profile and its bright active display', 1, '302123', 'unit', '2026-10-26 21:42:41', '2026-10-26 21:42:41', NULL, NULL),
-(5, 1, 'ROG Zephyrus G16 Laptop', 'CCS-LAP2', 'The 2024 ASUS ROG Zephyrus G16 is a premium, sub-2kg aluminum powerhouse that combines up to an Intel Core Ultra 9 185H processor and an NVIDIA GeForce RTX 4090 GPU with 32GB of high-speed RAM, up to 4TB of storage, and a vibrant 16-inch 2.5K 240Hz Nebula display.', 1, '301241', 'pcs', '2026-10-26 21:51:02', '2026-10-26 21:51:02', NULL, NULL),
-(6, 2, 'Exam Booklet', 'ALL-CON1', 'Examination Booklet for Prelim, Midterm, Final exams', 499, '', 'pcs', '2026-10-26 21:52:48', '2026-10-26 21:52:48', NULL, NULL),
-(7, 2, 'RJ45 CAT 5e Wire', 'CCS-C1', '(1 Meter wire) For Cisco, Network Activities', 300, '', 'pcs', '2026-10-26 21:54:53', '2026-10-26 21:54:53', NULL, NULL),
-(8, 1, 'HDMI Cable', 'ALL-A1', 'HDMI Cable for Smart TV, TV, Any devices compatible with HDMI', 15, '', 'pcs', '2026-10-26 22:00:18', '2026-10-26 22:04:49', NULL, NULL);
+(4, 3, 'Chef Uniform w/ Hat (Small)', 'ISHTM-A-2S', '(Unisex) A crisp, double-breasted white chef\'s jacket with a Mandarin collar and ¾-length sleeves with folded cuffs.', 100, '', 'set', '2026-10-26 21:34:48', '2026-10-28 00:32:44', NULL, NULL),
+(5, 3, 'Chef Uniform w/ Hat (Medium)', 'ISHTM-A-3M', '(Unisex) A crisp, double-breasted white chef\'s jacket with a Mandarin collar and ¾-length sleeves with folded cuffs.', 0, '', 'set', '2026-10-26 21:38:20', '2026-10-28 04:38:36', NULL, NULL),
+(6, 3, 'Chef Uniform w/ Hat (Large)', 'ISHTM-A-3L', '(Unisex) A crisp, double-breasted white chef\'s jacket with a Mandarin collar and ¾-length sleeves with folded cuffs.', 100, '', 'set', '2026-10-26 21:39:52', '2026-10-26 22:04:28', NULL, NULL),
+(7, 1, 'Lenovo Laptop', 'CCS-LAP1', 'Lenovo ThinkPad laptop, angled at 45 degrees to capture both its ultrathin profile and its bright active display', 1, '302123', 'unit', '2026-10-26 21:42:41', '2026-10-26 21:42:41', NULL, NULL),
+(8, 1, 'ROG Zephyrus G16 Laptop', 'CCS-LAP2', 'The 2024 ASUS ROG Zephyrus G16 is a premium, sub-2kg aluminum powerhouse that combines up to an Intel Core Ultra 9 185H processor and an NVIDIA GeForce RTX 4090 GPU with 32GB of high-speed RAM, up to 4TB of storage, and a vibrant 16-inch 2.5K 240Hz Nebula display.', 1, '301241', 'unit', '2026-10-26 21:51:02', '2026-10-28 04:20:51', NULL, NULL),
+(9, 2, 'Exam Booklet', 'ALL-CON1', 'Examination Booklet for Prelim, Midterm, Final exams', 499, '', 'pcs', '2026-10-26 21:52:48', '2026-10-26 21:52:48', NULL, NULL),
+(10, 2, 'RJ45 CAT 5e Wire', 'CCS-C1', '(1 Meter wire) For Cisco, Network Activities', 300, '', 'pcs', '2026-10-26 21:54:53', '2026-10-26 21:54:53', NULL, NULL),
+(11, 1, 'HDMI Cable', 'ALL-A1', 'HDMI Cable for Smart TV, TV, Any devices compatible with HDMI', 15, '', 'pcs', '2026-10-26 22:00:18', '2026-10-26 22:04:49', NULL, NULL),
+(12, 3, 'Lab Coat', 'CHS-A-L1', 'Unisex', 150, '', 'pcs', '2026-10-27 02:25:15', '2026-10-27 02:25:15', NULL, NULL),
+(13, 2, 'Band Aid', 'CHS-A-1', 'Band Aid for wounds', 200, '', 'box', '2026-10-28 04:18:48', '2026-10-28 04:19:07', '2026-10-20 00:00:00', NULL);
 
 -- --------------------------------------------------------
 
@@ -155,7 +157,7 @@ CREATE TABLE `personal_info` (
 
 INSERT INTO `personal_info` (`personal_id`, `user_id`, `student_id`, `first_name`, `middle_name`, `last_name`, `birthday`, `contact_number`, `department`, `course`, `gender`, `address`) VALUES
 (1, 1, 'AD198900013', 'Taylor Alisan', 'Swift', 'Kelce', '1989-12-13', '09198900013', 'College of Teacher Education', 'BSEd - Bachelor in Secondary Education', 'Male', 'Nashville'),
-(1, 2, 'SU202400769', 'John Carlo', 'Magtibay', 'Manalo', '2006-02-08', '09260682711', 'College of Computer Studies', 'BSCS - Bachelor of Science in Computer Science', 'Male', '2436 Main Street, Springfield, IL 62704');
+(2, 2, 'SU202400769', 'John Carlo', 'Magtibay', 'Manalo', '2006-02-08', '09260682711', 'College of Computer Studies', 'BSCS - Bachelor of Science in Computer Science', 'Male', '2436 Main Street, Springfield, IL 62704');
 
 -- --------------------------------------------------------
 
@@ -228,7 +230,7 @@ CREATE TABLE `user_account` (
 --
 
 INSERT INTO `user_account` (`user_id`, `gmail`, `password_hash`, `role`, `creationdate`, `status`) VALUES
-(1, 'admin@gmail.com', 'pbkdf2_sha256$600000$17b3da4a900c266c4ae098aa310ecc82$c478f7c76096bf6cbaa19fda3148b443dec353b3ea5444ceec9816f93d537a63', 'Admin', '2026-10-20 15:00:29', 'Active'),
+(1, 'taylor@gmail.com', 'pbkdf2_sha256$600000$17b3da4a900c266c4ae098aa310ecc82$c478f7c76096bf6cbaa19fda3148b443dec353b3ea5444ceec9816f93d537a63', 'Admin', '2026-10-20 15:00:29', 'Active'),
 (2, 'jcmanalo@gmail.com', 'pbkdf2_sha256$600000$9b40d5a7cf00bf6315b9981aa47f841f$e0cb9d531f120746a94dde5cbaeb536526152a452f9aaee3319a60c4101a4e6c', 'Student', '2026-10-25 22:19:15', 'Active');
 
 --
