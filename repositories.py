@@ -52,7 +52,6 @@ class AuditLogRepository:
         finally:
             cursor.close()
 
-
 def _log_action(action: str, table: str, record_id: Any) -> None:
     AuditLogRepository().log_action(
         Session.load().get("user_id"),
@@ -60,7 +59,6 @@ def _log_action(action: str, table: str, record_id: Any) -> None:
         table,
         str(record_id),
     )
-
 
 class UserRepository(BaseRepository):
     def get_by_id(self, user_id: int) -> Dict[str, Any] | None:

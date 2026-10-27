@@ -2,11 +2,9 @@ import os
 import subprocess
 import sys
 from tkinter import TclError, messagebox
-
 import customtkinter as ctk
 import mysql.connector
 from PIL import Image
-
 from models.password_utils import verify_password
 from models.users import Session
 

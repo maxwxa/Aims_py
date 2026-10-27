@@ -3,12 +3,10 @@ import subprocess
 import sys
 from datetime import datetime
 from tkinter import messagebox, ttk
-
 import customtkinter as ctk
 import mysql.connector
 from PIL import Image
 from tkcalendar import DateEntry
-
 from models.password_utils import hash_password
 from models.account_validation import (
     validate_contact_number, validate_email, validate_password,

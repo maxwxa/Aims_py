@@ -21,7 +21,7 @@ from models.inventory import InventoryItem, Category
 from models.account_validation import validate_new_account, validate_password
 
 app = ctk.CTk()
-app.geometry("1000x650")
+app.geometry("1920×1080")
 app.title("Academic Inventory Management System - Admin Dashboard")
 app.resizable(False, False)
 ctk.set_appearance_mode("light")
@@ -173,7 +173,7 @@ def create_analytics_tab(parent_frame):
             axis = figure.add_subplot(111)
             if counts:
                 axis.pie(counts, labels=labels, autopct="%1.1f%%")
-            axis.set_title("Categories Requested")
+            axis.set_title("Most Requested Categories")
             figure.tight_layout()
             canvas = FigureCanvasTkAgg(figure, master=right_chart)
             canvas.draw()
