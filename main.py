@@ -3,10 +3,10 @@ import subprocess
 import sys
 from tkinter import TclError, messagebox
 import customtkinter as ctk
-import mysql.connector
-from PIL import Image
+from PIL import Image, ImageTk
 from models.password_utils import verify_password
 from models.users import Session
+from repositories import UserRepository
 
 ctk.set_appearance_mode("light")
 
@@ -21,6 +21,18 @@ def destroy_login_window() -> None:
 
 app.geometry("900x550")
 app.title("Academic Inventory Management System - Login")
+
+icon_path = os.path.join(os.path.dirname(__file__), "assets", "Aims_plain_white.png")
+if not os.path.exists(icon_path):
+    icon_path = os.path.join(os.path.dirname(__file__), "Assets", "Aims_plain_white.png")
+if os.path.exists(icon_path):
+    try:
+        app_icon = ImageTk.PhotoImage(Image.open(icon_path))
+        app.wm_iconphoto(True, app_icon)
+        app._app_icon = app_icon
+    except Exception:
+        pass
+
 try:
     app.state("zoomed")
 except Exception:
@@ -40,7 +52,9 @@ right_frame.pack(side="right", fill="both", expand=True)
 left_content = ctk.CTkFrame(left_frame, fg_color="transparent")
 left_content.place(relx=0.5, rely=0.5, anchor="center")
 
-logo_path = r"C:\Users\maxwx\OneDrive\Documents\SDF04-Aims\Assets\Aims_plain_white.png"
+logo_path = os.path.join(os.path.dirname(__file__), "assets", "Aims_plain_white.png")
+if not os.path.exists(logo_path):
+    logo_path = os.path.join(os.path.dirname(__file__), "Assets", "Aims_plain_white.png")
 try:
     if os.path.exists(logo_path):
         logo_img_data = Image.open(logo_path)
@@ -51,7 +65,7 @@ try:
         logo_label = ctk.CTkLabel(left_content, text="[ A.I.M.S LOGO ]", text_color=WHITE, font=("Arial", 20, "bold"))
         logo_label.pack(pady=(0, 15))
 except Exception as e:
-    print(f"Error loading image: {e}")
+    pass
 
 ctk.CTkLabel(left_content, text="A.I.M.S", font=("Arial", 56, "bold"), text_color=WHITE).pack(pady=(0, 5))
 ctk.CTkLabel(left_content, text="Academic Inventory\nManagement System", font=("Arial", 42, "bold"), text_color=WHITE, justify="center").pack()
@@ -69,8 +83,79 @@ ctk.CTkLabel(card_frame, text="Password", font=("Arial", 12, "bold"), text_color
 password_entry = ctk.CTkEntry(card_frame, width=390, height=40, corner_radius=8, border_color="#d1d5db", fg_color=WHITE, text_color="black", show="*")
 password_entry.place(x=25, y=200)
 
+def show_loading_screen(user, dashboard_path):
+    left_frame.pack_forget()
+    right_frame.pack_forget()
+
+    loading_frame = ctk.CTkFrame(app, fg_color=BLUE_BG, corner_radius=0)
+    loading_frame.pack(fill="both", expand=True)
+
+    loading_center = ctk.CTkFrame(loading_frame, fg_color="transparent")
+    loading_center.place(relx=0.5, rely=0.5, anchor="center")
+
+    if os.path.exists(logo_path):
+        try:
+            load_logo_img = Image.open(logo_path)
+            load_logo = ctk.CTkImage(light_image=load_logo_img, dark_image=load_logo_img, size=(220, 220))
+            ctk.CTkLabel(loading_center, image=load_logo, text="").pack(pady=(0, 20))
+        except Exception:
+            ctk.CTkLabel(loading_center, text="A.I.M.S", font=("Arial", 40, "bold"), text_color=WHITE).pack(pady=(0, 20))
+    else:
+        ctk.CTkLabel(loading_center, text="A.I.M.S", font=("Arial", 40, "bold"), text_color=WHITE).pack(pady=(0, 20))
+
+    ctk.CTkLabel(
+        loading_center,
+        text="Loading Dashboard...",
+        font=("Arial", 22, "bold"),
+        text_color=WHITE,
+    ).pack(pady=(0, 10))
+
+    status_label = ctk.CTkLabel(
+        loading_center,
+        text="Initializing components...",
+        font=("Arial", 13),
+        text_color="#93c5fd",
+    )
+    status_label.pack(pady=(0, 20))
+
+    progress_bar = ctk.CTkProgressBar(
+        loading_center,
+        width=400,
+        height=16,
+        corner_radius=8,
+        fg_color="#172554",
+        progress_color="#60a5fa",
+    )
+    progress_bar.pack(pady=(0, 10))
+    progress_bar.set(0.0)
+
+    stages = [
+        (0.20, "Authenticating session...", 250),
+        (0.45, "Loading user profile & permissions...", 300),
+        (0.70, "Fetching inventory & requests...", 350),
+        (0.90, "Preparing dashboard interface...", 250),
+        (1.00, "Ready! Launching dashboard...", 200),
+    ]
+
+    def run_stage(index):
+        if index < len(stages):
+            prog, msg, delay = stages[index]
+            progress_bar.set(prog)
+            status_label.configure(text=msg)
+            app.after(delay, lambda: run_stage(index + 1))
+        else:
+            subprocess.Popen(
+                [sys.executable, dashboard_path],
+                cwd=os.path.dirname(__file__),
+            )
+            destroy_login_window()
+            sys.exit()
+
+    app.after(100, lambda: run_stage(0))
+
+
 def authenticate_user():
-    email = email_entry.get()
+    email = email_entry.get().strip()
     password = password_entry.get()
     
     if not email or not password:
@@ -78,22 +163,12 @@ def authenticate_user():
         return
 
     try:
-        conn = mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="",
-            database="aims_db"
-        )
-        cursor = conn.cursor(dictionary=True)
-        
-        cursor.execute("SELECT user_id, gmail, password_hash, role FROM user_account WHERE gmail = %s", (email,))
-        user = cursor.fetchone()
+        user_repo = UserRepository()
+        user = user_repo.get_by_email(email)
         
         if user:
             if verify_password(password, user['password_hash']):
                 Session.save(user['user_id'], user['gmail'], user['role'])
-                
-                messagebox.showinfo("Login Success", f"Welcome! Logged in as: {user['role']}")
                 
                 dashboard_name = (
                     "admin_dashboard.py"
@@ -109,23 +184,14 @@ def authenticate_user():
                     )
                     return
 
-                subprocess.Popen(
-                    [sys.executable, dashboard_path],
-                    cwd=os.path.dirname(__file__),
-                )
-                destroy_login_window()
-                sys.exit()
+                show_loading_screen(user, dashboard_path)
             else:
                 messagebox.showerror("Login Failed", "Incorrect password.")
         else:
             messagebox.showerror("Login Failed", "Account not found. Please register.")
             
-    except mysql.connector.Error as err:
-        messagebox.showerror("Database Error", f"Connection failed: {err}")
-    finally:
-        if 'conn' in locals() and conn.is_connected():
-            cursor.close()
-            conn.close()
+    except Exception as err:
+        messagebox.showerror("Database Connection Error", f"Database connection was lost or unavailable: {err}")
 
 def toggle_password():
     password_entry.configure(show="" if show_pass_var.get() == 1 else "*")

@@ -4,19 +4,29 @@ import sys
 from datetime import datetime
 from tkinter import messagebox, ttk
 import customtkinter as ctk
-import mysql.connector
-from PIL import Image
+from PIL import Image, ImageTk
 from tkcalendar import DateEntry
-from models.password_utils import hash_password
 from models.account_validation import (
     validate_contact_number, validate_email, validate_password,
     validate_student_number,
 )
+from repositories import UserRepository
 
 ctk.set_appearance_mode("light")
 app = ctk.CTk()
 app.geometry("900x550")
 app.title("Academic Inventory Management System - Register")
+
+icon_path = os.path.join(os.path.dirname(__file__), "assets", "Aims_plain_white.png")
+if not os.path.exists(icon_path):
+    icon_path = os.path.join(os.path.dirname(__file__), "Assets", "Aims_plain_white.png")
+if os.path.exists(icon_path):
+    try:
+        app_icon = ImageTk.PhotoImage(Image.open(icon_path))
+        app.wm_iconphoto(True, app_icon)
+        app._app_icon = app_icon
+    except Exception:
+        pass
 
 try:
     app.state("zoomed")
@@ -119,7 +129,9 @@ def toggle_password():
 show_pass_var = ctk.IntVar()
 ctk.CTkCheckBox(left_section, text="Show Password", variable=show_pass_var, command=toggle_password, font=("Arial", 12), checkbox_height=18, checkbox_width=18, border_color=BORDER_GRAY, fg_color=TEXT_BLUE, text_color="black").place(x=25, y=210)
 
-logo_path = r"C:\Users\maxwx\OneDrive\Documents\SDF04-Aims\Assets\Aims_plain_black.png"
+logo_path = os.path.join(os.path.dirname(__file__), "assets", "Aims_plain_black.png")
+if not os.path.exists(logo_path):
+    logo_path = os.path.join(os.path.dirname(__file__), "Assets", "Aims_plain_black.png")
 try:
     if os.path.exists(logo_path):
         logo_img_data = Image.open(logo_path)
@@ -160,7 +172,7 @@ bday_entry = DateEntry(bday_frame, background=WHITE, foreground="black", borderw
 bday_entry.pack(fill="both", expand=True, padx=2, pady=2)
 
 ctk.CTkLabel(right_section, text="Gender", font=("Arial", 12, "bold"), text_color="black").place(x=465, y=140)
-gender_combo = ctk.CTkComboBox(right_section, width=200, height=35, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black", button_color=BORDER_GRAY, button_hover_color="gray", values=["Male", "Female", "Other", "Prefer not to say"])
+gender_combo = ctk.CTkComboBox(right_section, width=200, height=35, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black", button_color=BORDER_GRAY, button_hover_color="gray", values=["Male", "Female", "Other", "Prefer not to say"], state="readonly")
 gender_combo.place(x=465, y=165)
 
 ctk.CTkLabel(right_section, text="Student No.", font=("Arial", 12, "bold"), text_color="black").place(x=25, y=215)
@@ -176,11 +188,11 @@ def update_courses(choice):
         course_combo.set("")
 
 ctk.CTkLabel(right_section, text="Department", font=("Arial", 12, "bold"), text_color="black").place(x=245, y=215)
-dept_combo = ctk.CTkComboBox(right_section, width=200, height=35, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black", button_color=BORDER_GRAY, button_hover_color="gray", values=list(department_data.keys()), command=update_courses)
+dept_combo = ctk.CTkComboBox(right_section, width=200, height=35, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black", button_color=BORDER_GRAY, button_hover_color="gray", values=list(department_data.keys()), command=update_courses, state="readonly")
 dept_combo.place(x=245, y=240)
 
 ctk.CTkLabel(right_section, text="Course", font=("Arial", 12, "bold"), text_color="black").place(x=465, y=215)
-course_combo = ctk.CTkComboBox(right_section, width=200, height=35, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black", button_color=BORDER_GRAY, button_hover_color="gray", values=[])
+course_combo = ctk.CTkComboBox(right_section, width=200, height=35, corner_radius=8, border_color=BORDER_GRAY, fg_color=WHITE, text_color="black", button_color=BORDER_GRAY, button_hover_color="gray", values=[], state="readonly")
 course_combo.place(x=465, y=240)
 
 initial_dept = list(department_data.keys())[0]
@@ -198,16 +210,16 @@ def open_login():
 def register_user():
     email = email_entry.get().strip().lower()
     password = password_entry.get()
-    fname = fname_entry.get()
-    mname = mname_entry.get()
-    lname = lname_entry.get()
-    contact = contact_entry.get()
+    fname = fname_entry.get().strip()
+    mname = mname_entry.get().strip()
+    lname = lname_entry.get().strip()
+    contact = contact_entry.get().strip()
     bday = bday_entry.get()
     gender = gender_combo.get()
     student_no = student_no_entry.get().strip().upper()
     dept = dept_combo.get()
     course = course_combo.get()
-    address = address_textbox.get("1.0", "end-1c")
+    address = address_textbox.get("1.0", "end-1c").strip()
 
     if not email or not password or not fname or not lname or not student_no or not course:
         messagebox.showwarning(
@@ -224,66 +236,34 @@ def register_user():
         messagebox.showerror("Validation Error", str(error))
         return
 
+    account_data = {
+        "gmail": email,
+        "password": password,
+        "role": "Student",
+        "status": "Active",
+    }
+    personal_data = {
+        "student_id": student_no,
+        "first_name": fname,
+        "middle_name": mname,
+        "last_name": lname,
+        "birthday": bday,
+        "contact_number": contact,
+        "department": dept,
+        "course": course,
+        "gender": gender,
+        "address": address,
+    }
+
     try:
-        conn = mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="",
-            database="aims_db"
-        )
-        cursor = conn.cursor()
-
-        cursor.execute(
-            "SELECT user_id FROM user_account WHERE LOWER(TRIM(gmail)) = %s",
-            (email,),
-        )
-        if cursor.fetchone():
-            messagebox.showerror("Registration Failed", "This email address is already registered.")
-            cursor.close()
-            conn.close()
-            return
-
-        cursor.execute(
-            "SELECT personal_id FROM personal_info "
-            "WHERE UPPER(TRIM(student_id)) = %s",
-            (student_no,),
-        )
-        if cursor.fetchone():
-            messagebox.showerror("Registration Failed", "This Student No. is already registered.")
-            cursor.close()
-            conn.close()
-            return
-
-        creation_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        hashed_password = hash_password(password)
-        
-        user_sql = "INSERT INTO user_account (gmail, password_hash, role, creationdate) VALUES (%s, %s, %s, %s)"
-        cursor.execute(user_sql, (email, hashed_password, "Student", creation_date))
-        new_user_id = cursor.lastrowid
-        
-        info_sql = """
-            INSERT INTO personal_info 
-            (user_id, student_id, first_name, middle_name, last_name, birthday, contact_number, department, course, gender, address)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """
-        cursor.execute(info_sql, (new_user_id, student_no, fname, mname, lname, bday, contact, dept, course, gender, address))
-        
-        conn.commit()
+        user_repo = UserRepository()
+        user_repo.add_user(account_data, personal_data)
         messagebox.showinfo("Success", "Account registered successfully! Returning to login.")
         open_login()
-        
-    except mysql.connector.Error as err:
-        conn.rollback()
-        print("\n=== DATABASE ERROR ===")
-        print(f"Error Code: {err.errno}")
-        print(f"SQLSTATE: {err.sqlstate}")
-        print(f"Message: {err.msg}")
-        print("======================\n")
-        messagebox.showerror("Database Error", "Registration failed. Check console for details.")
-    finally:
-        if 'conn' in locals() and conn.is_connected():
-            cursor.close()
-            conn.close()
+    except ValueError as err:
+        messagebox.showerror("Registration Failed", str(err))
+    except Exception as err:
+        messagebox.showerror("Database Connection Error", f"Registration failed due to database connection loss or error: {err}")
 
 ctk.CTkButton(card_frame, text="Back to Login", width=140, height=40, fg_color=CARD_GRAY, text_color=TEXT_BLUE, border_color=TEXT_BLUE, border_width=1, hover_color="#eff6ff", corner_radius=8, font=("Arial", 14, "bold"), command=open_login).place(x=35, y=595)
 ctk.CTkButton(card_frame, text="Register", width=140, height=40, fg_color=TEXT_BLUE, hover_color="#1d4ed8", corner_radius=8, font=("Arial", 14, "bold"), command=register_user).place(x=875, y=595)

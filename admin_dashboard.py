@@ -1,14 +1,14 @@
+import csv
 import os
 import subprocess
 import sys
+from datetime import date, datetime
+from tkinter import filedialog, ttk, messagebox
 import customtkinter as ctk
-import mysql.connector
-
+from PIL import Image, ImageTk
+from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
-from datetime import datetime
-from tkinter import filedialog, ttk, messagebox
-from PIL import Image
 from tkcalendar import DateEntry
 from models.users import Session
 from repositories import (
@@ -22,6 +22,18 @@ ctk.set_appearance_mode("light")
 app = ctk.CTk()
 app.geometry("1920x1080")
 app.title("Academic Inventory Management System - Admin Dashboard")
+
+icon_path = os.path.join(os.path.dirname(__file__), "assets", "Aims_plain_white.png")
+if not os.path.exists(icon_path):
+    icon_path = os.path.join(os.path.dirname(__file__), "Assets", "Aims_plain_white.png")
+if os.path.exists(icon_path):
+    try:
+        app_icon = ImageTk.PhotoImage(Image.open(icon_path))
+        app.wm_iconphoto(True, app_icon)
+        app._app_icon = app_icon
+    except Exception:
+        pass
+
 try:
     app.state("zoomed")
 except Exception:
@@ -61,7 +73,9 @@ main_bg.pack(fill="both", expand=True)
 header_frame = ctk.CTkFrame(main_bg, height=70, fg_color=DARK_BLUE, corner_radius=0)
 header_frame.pack(fill="x", side="top")
 
-logo_path = r"C:\Users\maxwx\OneDrive\Documents\SDF04-Aims\Assets\Aims_plain_white.png"
+logo_path = os.path.join(os.path.dirname(__file__), "assets", "Aims_plain_white.png")
+if not os.path.exists(logo_path):
+    logo_path = os.path.join(os.path.dirname(__file__), "Assets", "Aims_plain_white.png")
 try:
     if os.path.exists(logo_path):
         logo_img = ctk.CTkImage(light_image=Image.open(logo_path), size=(50, 50))
@@ -76,6 +90,9 @@ def logout():
     LogoutConfirmationModal(app)
 logout_btn = ctk.CTkButton(header_frame, text="Log out", width=100, height=35, fg_color=RED, hover_color="#dc2626", corner_radius=8, font=("Arial", 14, "bold"), command=logout)
 logout_btn.pack(side="right", padx=20, pady=17)
+current_date_str = datetime.now().strftime("%A, %B %d, %Y")
+date_label = ctk.CTkLabel(header_frame, text=current_date_str, font=("Arial", 14, "bold"), text_color=WHITE)
+date_label.pack(side="right", padx=(0, 15), pady=17)
 nav_frame = ctk.CTkFrame(main_bg, height=60, fg_color=WHITE, corner_radius=20)
 nav_frame.pack(fill="x", padx=20, pady=15)
 nav_frame.grid_columnconfigure(0, weight=1)
@@ -101,15 +118,327 @@ for i, tab in enumerate(tabs):
     btn.grid(row=0, column=i, padx=4, sticky="ew")
     nav_buttons[tab] = btn
 
+class SummaryReportModal:
+    def __init__(self, parent):
+        self.modal = ctk.CTkToplevel(parent)
+        self.modal.title("Summary Reports & Exports")
+        self.modal.geometry("980x680")
+        self.modal.minsize(800, 500)
+        self.modal.configure(fg_color=MODAL_BG)
+        self.modal.transient(parent)
+        self.modal.grab_set()
+
+        self.report_headers = []
+        self.report_data = []
+        self.report_title = ""
+
+        top_bar = ctk.CTkFrame(self.modal, fg_color=DARK_BLUE, height=60, corner_radius=0)
+        top_bar.pack(fill="x", side="top")
+        top_bar.pack_propagate(False)
+
+        ctk.CTkLabel(
+            top_bar, text="Generate Summary Reports", font=("Arial", 20, "bold"), text_color=WHITE
+        ).pack(side="left", padx=20, pady=15)
+
+        controls_frame = ctk.CTkFrame(self.modal, fg_color=WHITE, corner_radius=8)
+        controls_frame.pack(fill="x", padx=20, pady=(15, 10))
+
+        ctk.CTkLabel(
+            controls_frame, text="Report Type:", font=("Arial", 12, "bold"), text_color=TEXT_BLUE
+        ).pack(side="left", padx=(15, 5), pady=12)
+
+        self.report_type_combo = ctk.CTkComboBox(
+            controls_frame,
+            width=280,
+            values=[
+                "Inventory Summary",
+                "Out of Stock & Expired Items",
+                "Items Due for Return",
+                "Item Requests Summary",
+                "Transactions Summary",
+                "System Activity Logs"
+            ],
+            fg_color=WHITE,
+            text_color="black",
+            button_color="#d1d5db",
+            state="readonly",
+        )
+        self.report_type_combo.pack(side="left", padx=5, pady=12)
+        self.report_type_combo.set("Inventory Summary")
+
+        ctk.CTkButton(
+            controls_frame,
+            text="Generate Report",
+            fg_color=BLUE,
+            hover_color="#1e40af",
+            font=("Arial", 12, "bold"),
+            command=self.generate_report,
+        ).pack(side="left", padx=10, pady=12)
+
+        ctk.CTkButton(
+            controls_frame,
+            text="Export to CSV",
+            fg_color="#16a34a",
+            hover_color="#15803d",
+            font=("Arial", 12, "bold"),
+            command=self.export_csv,
+        ).pack(side="right", padx=(5, 15), pady=12)
+
+        ctk.CTkButton(
+            controls_frame,
+            text="Export to PDF",
+            fg_color="#dc2626",
+            hover_color="#b91c1c",
+            font=("Arial", 12, "bold"),
+            command=self.export_pdf,
+        ).pack(side="right", padx=5, pady=12)
+
+        self.stats_label = ctk.CTkLabel(
+            self.modal,
+            text="Select a report type and click 'Generate Report' to view summary details.",
+            font=("Arial", 13, "bold"),
+            text_color="#bfdbfe",
+            anchor="w",
+        )
+        self.stats_label.pack(fill="x", padx=25, pady=(0, 5))
+
+        table_frame = ctk.CTkFrame(self.modal, fg_color=WHITE, corner_radius=8)
+        table_frame.pack(fill="both", expand=True, padx=20, pady=(5, 20))
+
+        self.tree = ttk.Treeview(table_frame, show="headings", selectmode="browse")
+        vsb = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
+        hsb = ttk.Scrollbar(table_frame, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
+        vsb.pack(side="right", fill="y")
+        hsb.pack(side="bottom", fill="x")
+        self.tree.pack(fill="both", expand=True, padx=5, pady=5)
+
+        self.generate_report()
+
+    def generate_report(self):
+        report_type = self.report_type_combo.get()
+        self.report_title = report_type
+        self.report_headers = []
+        self.report_data = []
+
+        try:
+            if report_type == "Inventory Summary":
+                items = InventoryRepository().get_all()
+                self.report_headers = ["Item ID", "Item Name", "Code", "Category", "Stock", "Unit", "Added Date"]
+                total_stock = 0
+                for item in items:
+                    total_stock += item.stock
+                    self.report_data.append([
+                        str(item.item_id),
+                        item.item_name,
+                        item.item_code or "N/A",
+                        item.category_name or "N/A",
+                        str(item.stock),
+                        item.unit or "pcs",
+                        str(item.added_date or "N/A")[:10]
+                    ])
+                self.stats_label.configure(
+                    text=f"Report: {report_type} | Total Items: {len(items)} | Total Combined Stock: {total_stock}"
+                )
+            elif report_type == "Out of Stock & Expired Items":
+                items = InventoryRepository().get_all()
+                target_items = [item for item in items if item.stock <= 0 or item.is_expired]
+                self.report_headers = ["Item ID", "Item Name", "Code", "Category", "Stock", "Expiration Date", "Status"]
+                for item in target_items:
+                    self.report_data.append([
+                        str(item.item_id),
+                        item.item_name,
+                        item.item_code or "N/A",
+                        item.category_name or "N/A",
+                        str(item.stock),
+                        str(item.expiration_date or "N/A")[:10],
+                        item.status_label
+                    ])
+                self.stats_label.configure(
+                    text=f"Report: {report_type} | Total Out-of-Stock & Expired Items: {len(target_items)}"
+                )
+            elif report_type == "Items Due for Return":
+                due_items = AnalyticsRepository().get_due_items()
+                self.report_headers = ["Request ID", "Item ID", "Item Name", "Due Date"]
+                for item in due_items:
+                    self.report_data.append([
+                        str(item.get("request_id", "N/A")),
+                        str(item.get("item_id", "N/A")),
+                        item.get("item_name", "N/A"),
+                        str(item.get("due_date", "N/A"))[:10]
+                    ])
+                self.stats_label.configure(
+                    text=f"Report: {report_type} | Items Due/Overdue for Return: {len(due_items)}"
+                )
+            elif report_type == "Item Requests Summary":
+                requests = RequestRepository().get_all()
+                self.report_headers = ["Req ID", "Requester", "Student No", "Item Name", "Qty", "Status", "Request Date", "Due Date"]
+                counts = {}
+                for req in requests:
+                    status = req.get("request_status", "Pending")
+                    counts[status] = counts.get(status, 0) + 1
+                    self.report_data.append([
+                        str(req.get("request_id", "")),
+                        req.get("requester_name", "N/A"),
+                        req.get("student_id", "N/A"),
+                        req.get("item_name", "N/A"),
+                        str(req.get("quantity", 1)),
+                        status,
+                        str(req.get("request_date", "N/A"))[:16],
+                        str(req.get("due_date", "N/A"))[:10]
+                    ])
+                summary_status = ", ".join(f"{k}: {v}" for k, v in counts.items())
+                self.stats_label.configure(
+                    text=f"Report: {report_type} | Total Requests: {len(requests)} ({summary_status})"
+                )
+            elif report_type == "Transactions Summary":
+                transactions = TransactionRepository().get_all(mode="current")
+                self.report_headers = ["Track No.", "Req ID", "Type", "Item Name", "Qty", "Approved By", "Received By", "Date/Time"]
+                for trx in transactions:
+                    is_cancelled = (
+                        str(trx.get("transaction_type", "")).strip().lower() == "cancelled"
+                        or str(trx.get("request_status", "")).strip().lower() == "cancelled"
+                    )
+                    received_by = "N/A" if is_cancelled else (trx.get("requester_name") or trx.get("confirmed_by_name") or "N/A")
+                    self.report_data.append([
+                        f"TRX-{trx.get('transaction_id', '')}",
+                        f"REQ-{trx.get('request_id', '')}",
+                        str(trx.get("transaction_type", "N/A")),
+                        str(trx.get("item_name", "N/A")),
+                        str(trx.get("quantity", 0)),
+                        str(trx.get("approved_by_name") or "N/A"),
+                        received_by,
+                        str(trx.get("transaction_date", "N/A"))[:16]
+                    ])
+                self.stats_label.configure(
+                    text=f"Report: {report_type} | Total Current Transactions: {len(transactions)}"
+                )
+            elif report_type == "System Activity Logs":
+                logs = AnalyticsRepository().get_recent_logs(limit=100)
+                self.report_headers = ["Log ID", "User", "Action", "Table Affected", "Record ID", "Timestamp"]
+                for log in logs:
+                    self.report_data.append([
+                        str(log.get("log_id", "")),
+                        str(log.get("user", "System")),
+                        str(log.get("action", "")),
+                        str(log.get("table_affected", "")),
+                        str(log.get("item_id", "")),
+                        str(log.get("timestamp", ""))[:19]
+                    ])
+                self.stats_label.configure(
+                    text=f"Report: {report_type} | Recent Log Entries: {len(logs)}"
+                )
+        except Exception as error:
+            messagebox.showerror("Report Error", f"Failed to generate report: {error}", parent=self.modal)
+            return
+
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        self.tree["columns"] = self.report_headers
+        for header in self.report_headers:
+            self.tree.heading(header, text=header)
+            self.tree.column(header, width=120, anchor="center")
+
+        for row in self.report_data:
+            self.tree.insert("", "end", values=row)
+
+    def export_csv(self):
+        if not self.report_data:
+            messagebox.showwarning("No Data", "There is no report data to export.", parent=self.modal)
+            return
+        filename = filedialog.asksaveasfilename(
+            parent=self.modal,
+            defaultextension=".csv",
+            filetypes=[("CSV file", "*.csv"), ("All files", "*.*")],
+            initialfile=f"{self.report_title.replace(' ', '_').lower()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        )
+        if not filename:
+            return
+        try:
+            with open(filename, mode="w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow([self.report_title])
+                writer.writerow([f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
+                writer.writerow([])
+                writer.writerow(self.report_headers)
+                writer.writerows(self.report_data)
+            messagebox.showinfo("Export Success", f"Report successfully exported to:\n{filename}", parent=self.modal)
+        except Exception as error:
+            messagebox.showerror("Export Error", f"Failed to export CSV: {error}", parent=self.modal)
+
+    def export_pdf(self):
+        if not self.report_data:
+            messagebox.showwarning("No Data", "There is no report data to export.", parent=self.modal)
+            return
+        filename = filedialog.asksaveasfilename(
+            parent=self.modal,
+            defaultextension=".pdf",
+            filetypes=[("PDF file", "*.pdf"), ("All files", "*.*")],
+            initialfile=f"{self.report_title.replace(' ', '_').lower()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        )
+        if not filename:
+            return
+        try:
+            rows_per_page = 28
+            total_rows = len(self.report_data)
+            total_pages = max(1, (total_rows + rows_per_page - 1) // rows_per_page)
+
+            with PdfPages(filename) as pdf:
+                for page in range(total_pages):
+                    fig = Figure(figsize=(11, 8.5), dpi=100)
+                    ax = fig.add_subplot(111)
+                    ax.axis("off")
+
+                    fig.text(0.5, 0.95, f"AIMS - {self.report_title}", ha="center", va="top", fontsize=15, weight="bold")
+                    fig.text(0.5, 0.91, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  |  Page {page+1} of {total_pages}", ha="center", va="top", fontsize=9, color="#555555")
+
+                    start_idx = page * rows_per_page
+                    end_idx = min(start_idx + rows_per_page, total_rows)
+                    page_data = self.report_data[start_idx:end_idx]
+
+                    table_cell_text = page_data if page_data else [["" for _ in self.report_headers]]
+                    table = ax.table(
+                        cellText=table_cell_text,
+                        colLabels=self.report_headers,
+                        loc="upper center",
+                        cellLoc="center",
+                        bbox=[0.02, 0.05, 0.96, 0.82]
+                    )
+                    table.auto_set_font_size(False)
+                    table.set_fontsize(8)
+
+                    for (r, c), cell in table.get_celld().items():
+                        if r == 0:
+                            cell.set_facecolor("#1c3b7a")
+                            cell.get_text().set_color("white")
+                            cell.get_text().set_weight("bold")
+                        elif r % 2 == 0:
+                            cell.set_facecolor("#f3f4f6")
+                        else:
+                            cell.set_facecolor("white")
+
+                    pdf.savefig(fig, bbox_inches="tight")
+            messagebox.showinfo("Export Success", f"Report successfully exported to:\n{filename}", parent=self.modal)
+        except Exception as error:
+            messagebox.showerror("Export Error", f"Failed to export PDF: {error}", parent=self.modal)
+
 def create_analytics_tab(parent_frame):
     repository = AnalyticsRepository()
     frame = ctk.CTkScrollableFrame(parent_frame, fg_color=BG_BLUE, corner_radius=0)
     frame.pack(fill="both", expand=True)
     
-    # --- SUMMARY CARDS (2 Rows, 3 Columns) ---
+    date_header = ctk.CTkFrame(frame, fg_color="transparent")
+    date_header.pack(fill="x", padx=20, pady=(15, 0))
+    current_date_str = datetime.now().strftime("%A, %B %d, %Y")
+    ctk.CTkButton(date_header, text="Summary Reports & Export", height=26,
+                  fg_color="#10b981", hover_color="#059669", text_color=WHITE, font=("Arial", 11, "bold"),
+                  command=lambda: SummaryReportModal(app)).pack(side="right")
+
     cards = ctk.CTkFrame(frame, fg_color="transparent")
-    cards.pack(fill="x", padx=20, pady=(20, 10))
-    for column in range(3):
+    cards.pack(fill="x", padx=20, pady=(15, 10))
+    for column in range(4):
         cards.grid_columnconfigure(column, weight=1)
 
     card_values = {}
@@ -119,12 +448,14 @@ def create_analytics_tab(parent_frame):
         ("active_users", "Active Users"),
         ("active_requests", "Active Requests"), 
         ("out_of_stock_count", "Out of Stock Count"),
-        ("due_for_return_count", "Due for Return Count")
+        ("expired_count", "Expired Items"),
+        ("due_for_return_count", "Due for Return Count"),
+        ("total_transactions", "Total Transactions")
     )
     
     for index, (key, title) in enumerate(card_configs):
-        row = index // 3
-        column = index % 3
+        row = index // 4
+        column = index % 4
         card = ctk.CTkFrame(cards, fg_color=WHITE, corner_radius=8,
                             border_width=1, border_color="#d1d5db")
         card.grid(row=row, column=column, sticky="ew", padx=5, pady=(0 if row == 0 else 10))
@@ -154,14 +485,14 @@ def create_analytics_tab(parent_frame):
     
     oos_frame = ctk.CTkFrame(alerts, fg_color=WHITE, corner_radius=8, border_width=1, border_color="#f87171")
     oos_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
-    ctk.CTkLabel(oos_frame, text="Out of Stock Items", text_color="#dc2626", font=("Arial", 14, "bold")).pack(pady=(10, 5))
-    oos_list = ctk.CTkScrollableFrame(oos_frame, fg_color="transparent", height=120)
+    ctk.CTkLabel(oos_frame, text="Alerts", text_color="#dc2626", font=("Arial", 14, "bold")).pack(pady=(10, 5))
+    oos_list = ctk.CTkScrollableFrame(oos_frame, fg_color="transparent", height=140)
     oos_list.pack(fill="both", expand=True, padx=10, pady=(0, 10))
     
     due_frame = ctk.CTkFrame(alerts, fg_color=WHITE, corner_radius=8, border_width=1, border_color="#fbbf24")
     due_frame.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
     ctk.CTkLabel(due_frame, text="Items Due for Return", text_color="#d97706", font=("Arial", 14, "bold")).pack(pady=(10, 5))
-    due_list = ctk.CTkScrollableFrame(due_frame, fg_color="transparent", height=120)
+    due_list = ctk.CTkScrollableFrame(due_frame, fg_color="transparent", height=140)
     due_list.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
     log_header = ctk.CTkFrame(frame, height=38, fg_color="#1c3b7a", corner_radius=8)
@@ -174,7 +505,7 @@ def create_analytics_tab(parent_frame):
     ctk.CTkButton(log_header, text="Refresh", width=80, height=26,
                   fg_color=WHITE, text_color="#1c3b7a", command=lambda: refresh()).pack(
         side="right", padx=(5, 10), pady=6)
-        
+
     action_var = ctk.StringVar(value="All Actions")
     action_dropdown = ctk.CTkOptionMenu(log_header, variable=action_var, width=120, height=26,
                                         values=["All Actions", "INSERT", "UPDATE", "DELETE"],
@@ -238,20 +569,20 @@ def create_analytics_tab(parent_frame):
             for widget in oos_list.winfo_children(): widget.destroy()
             for widget in due_list.winfo_children(): widget.destroy()
             
-            oos_items = repository.get_out_of_stock_items() 
+            oos_items = repository.get_out_of_stock_and_expired_items() 
             due_items = repository.get_due_items()
             if not oos_items:
-                ctk.CTkLabel(oos_list, text="No items out of stock.", text_color="gray").pack(pady=10)
+                ctk.CTkLabel(oos_list, text="No items out of stock or expired.", text_color="gray").pack(pady=10)
             else:
                 for item in oos_items:
                     card = ctk.CTkFrame(oos_list, fg_color="#f3f4f6", corner_radius=6)
                     card.pack(fill="x", pady=2, padx=2)
                     
-                    img_path = item.get("image_path") # Update key to match your DB column
+                    img_path = item.get("image_path")
                     ctk_img = None
                     if img_path and os.path.exists(img_path):
                         try:
-                            ctk_img = ctk.CTkImage(light_image=Image.open(img_path), size=(40, 40))
+                            ctk_img = ctk.CTkImage(light_image=Image.open(img_path), dark_image=Image.open(img_path), size=(40, 40))
                         except Exception:
                             pass
                             
@@ -262,7 +593,14 @@ def create_analytics_tab(parent_frame):
                     details = ctk.CTkFrame(card, fg_color="transparent")
                     details.pack(side="left", fill="x", expand=True, padx=(5, 5))
                     ctk.CTkLabel(details, text=item.get("item_name", "Unknown"), font=("Arial", 12, "bold"), text_color="black", anchor="w").pack(fill="x")
-                    ctk.CTkLabel(details, text=f"ID: {item.get('item_id', 'N/A')} | Stock: {item.get('stock', 0)}", font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x")
+                    
+                    status_reason = item.get("status_reason", "Out of Stock")
+                    exp_date = item.get("expiration_date")
+                    exp_str = f" | Exp: {str(exp_date)[:10]}" if exp_date else ""
+                    ctk.CTkLabel(details, text=f"ID: {item.get('item_id', 'N/A')} | Stock: {item.get('stock', 0)}{exp_str}", font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x")
+                    
+                    tag_color = "#dc2626" if "Expired" in status_reason else "#b91c1c"
+                    ctk.CTkLabel(card, text=status_reason, font=("Arial", 10, "bold"), text_color=tag_color).pack(side="right", padx=10)
 
             if not due_items:
                 ctk.CTkLabel(due_list, text="No items currently due.", text_color="gray").pack(pady=10)
@@ -275,7 +613,7 @@ def create_analytics_tab(parent_frame):
                     ctk_img = None
                     if img_path and os.path.exists(img_path):
                         try:
-                            ctk_img = ctk.CTkImage(light_image=Image.open(img_path), size=(40, 40))
+                            ctk_img = ctk.CTkImage(light_image=Image.open(img_path), dark_image=Image.open(img_path), size=(40, 40))
                         except Exception:
                             pass
                             
@@ -320,11 +658,10 @@ def create_analytics_tab(parent_frame):
             canvas2.draw()
             canvas2.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
             
-            # 4. Logs
             current_logs_data = repository.get_recent_logs()
             filter_logs()
             
-        except (ValueError, mysql.connector.Error) as error:
+        except Exception as error:
             messagebox.showerror("Analytics Unavailable", str(error))
             
     refresh()
@@ -337,7 +674,6 @@ style.theme_use("default")
 style.configure("Treeview", background=WHITE, foreground="black", rowheight=25, fieldbackground=WHITE, borderwidth=0)
 style.configure("Treeview.Heading", background=BG_BLUE, foreground="black", font=('Arial', 10, 'bold'))
 style.map('Treeview', background=[('selected', '#dbeafe')])
-
 
 def create_inventory_tab(parent_frame):
     inventory_repo = InventoryRepository()
@@ -355,7 +691,7 @@ def create_inventory_tab(parent_frame):
     search_entry.pack(side="right", padx=(5, 15), pady=8)
     ctk.CTkLabel(header_frame, text="Search :", font=("Arial", 12, "bold"), text_color="white").pack(side="right", padx=5)
 
-    filter_combo = ctk.CTkComboBox(header_frame, width=120, height=30, corner_radius=6, fg_color="white", text_color="black", button_color="white", values=["All", "Available", "Requested"])
+    filter_combo = ctk.CTkComboBox(header_frame, width=130, height=30, corner_radius=6, fg_color="white", text_color="black", button_color="white", values=["All", "Available", "Out of Stock", "Expired", "Requested"], state="readonly")
     filter_combo.pack(side="right", padx=(5, 15), pady=8)
     ctk.CTkLabel(header_frame, text="Filter :", font=("Arial", 12, "bold"), text_color="white").pack(side="right", padx=5)
 
@@ -368,8 +704,14 @@ def create_inventory_tab(parent_frame):
             widget.destroy()
 
         try:
-            items = inventory_repo.get_all(search_term=search_term, filter_status=filter_status)
-        except mysql.connector.Error as error:
+            items = inventory_repo.get_all(search_term=search_term, filter_status=filter_status if filter_status not in ("Out of Stock", "Expired") else "All")
+            if filter_status == "Available":
+                items = [item for item in items if item.stock > 0 and not item.is_expired]
+            elif filter_status == "Out of Stock":
+                items = [item for item in items if item.stock <= 0]
+            elif filter_status == "Expired":
+                items = [item for item in items if item.is_expired]
+        except Exception as error:
             messagebox.showerror(
                 "Inventory Unavailable",
                 f"Could not load inventory data: {error}",
@@ -380,31 +722,86 @@ def create_inventory_tab(parent_frame):
             row = i // 3
             col = i % 3
 
-            card = ctk.CTkFrame(catalogue_container, fg_color="white", border_width=2, border_color="black", corner_radius=0)
+            card = ctk.CTkFrame(catalogue_container, height=280, fg_color=WHITE, border_width=1, border_color="#d1d5db", corner_radius=8)
             card.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
             card.grid_columnconfigure(0, weight=1)
+            card.grid_rowconfigure(1, weight=1)
 
-            ctk.CTkLabel(card, text=item.item_name, font=("Arial", 12, "bold"), text_color="black").grid(row=0, column=0, pady=(5, 5))
-            
-            ctk.CTkFrame(card, height=2, fg_color="black").grid(row=1, column=0, sticky="ew")
+            name_frame = ctk.CTkFrame(card, fg_color=WHITE, corner_radius=0)
+            name_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
+            ctk.CTkLabel(name_frame, text=item.item_name,
+                         font=("Arial", 12, "bold"), text_color=TEXT_BLUE,
+                         anchor="center").pack(fill="x", padx=10, pady=(8, 4))
+            if item.is_expired:
+                stock_label_text = "Expired"
+                stock_color = "#dc2626"
+            elif item.stock <= 0:
+                stock_label_text = "Out of Stock"
+                stock_color = "#b91c1c"
+            else:
+                stock_label_text = f"Stock available: {item.stock}"
+                stock_color = "#15803d"
+            ctk.CTkLabel(
+                name_frame,
+                text=stock_label_text,
+                font=("Arial", 10, "bold"),
+                text_color=stock_color,
+                anchor="center",
+            ).pack(fill="x", padx=10, pady=(0, 6))
+            ctk.CTkFrame(name_frame, height=1, fg_color="#d1d5db").pack(fill="x", padx=10)
 
-            image_frame = ctk.CTkFrame(card, height=120, fg_color="#e5e7eb", corner_radius=0)
-            image_frame.grid(row=2, column=0, sticky="nsew")
-            
-            stock_text = f"Stock: {item.stock}"
-            ctk.CTkLabel(image_frame, text=stock_text, font=("Arial", 12, "bold"), text_color="black").place(relx=0.5, rely=0.5, anchor="center")
+            image_frame = ctk.CTkFrame(card, fg_color="#e5e7eb", corner_radius=6)
+            image_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
 
-            ctk.CTkFrame(card, height=2, fg_color="black").grid(row=3, column=0, sticky="ew")
+            img_label = ctk.CTkLabel(image_frame, text="No image available",
+                                     text_color="#6b7280", font=("Arial", 10))
+            img_label.place(relx=0.5, rely=0.5, anchor="center")
 
-            btn_frame = ctk.CTkFrame(card, fg_color="transparent", corner_radius=0)
-            btn_frame.grid(row=4, column=0, sticky="ew")
-            btn_frame.grid_columnconfigure((0, 1), weight=1)
+            if item.image_path and os.path.isfile(item.image_path):
+                try:
+                    pil_img = Image.open(item.image_path)
+                    img_w, img_h = pil_img.size
+                    init_ratio = min(150 / max(1, img_w), 120 / max(1, img_h))
+                    init_w = max(1, int(img_w * init_ratio))
+                    init_h = max(1, int(img_h * init_ratio))
+                    ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(init_w, init_h))
+                    img_label.configure(text="", image=ctk_img)
+                    img_label.image = ctk_img
 
-            view_btn = ctk.CTkButton(btn_frame, text="View Details", fg_color="#1e3a8a", corner_radius=0, command=lambda id=item.item_id: view_details(id))
-            view_btn.grid(row=0, column=0, sticky="ew", padx=(0, 1))
+                    def on_v1_img_resize(event, src=pil_img, lbl=img_label):
+                        w = event.width
+                        h = event.height
+                        if w > 10 and h > 10:
+                            sw, sh = src.size
+                            ratio = min(w / sw, h / sh)
+                            new_w = max(1, int(sw * ratio))
+                            new_h = max(1, int(sh * ratio))
+                            resized = ctk.CTkImage(light_image=src, dark_image=src, size=(new_w, new_h))
+                            lbl.configure(image=resized, text="")
+                            lbl.image = resized
 
-            manage_btn = ctk.CTkButton(btn_frame, text="Manage", fg_color="#86efac", text_color="black", hover_color="#4ade80", corner_radius=0, command=lambda id=item.item_id: manage_item(id))
-            manage_btn.grid(row=0, column=1, sticky="ew")
+                    image_frame.bind("<Configure>", on_v1_img_resize)
+                except (OSError, ValueError):
+                    pass
+
+            btn_frame = ctk.CTkFrame(card, fg_color=WHITE, corner_radius=0,
+                                     border_width=1, border_color="#d1d5db")
+            btn_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
+            btn_frame.grid_columnconfigure(0, weight=1)
+            btn_frame.grid_columnconfigure(1, weight=1)
+
+            view_btn = ctk.CTkButton(btn_frame, text="View Details", height=35,
+                                     fg_color=BLUE, hover_color="#1e40af", corner_radius=6,
+                                     font=("Arial", 10, "bold"),
+                                     command=lambda id=item.item_id: view_details(id))
+            view_btn.grid(row=0, column=0, sticky="ew", padx=(8, 4), pady=8)
+
+            manage_btn = ctk.CTkButton(btn_frame, text="Manage", height=35,
+                                       fg_color="#86efac", text_color="black",
+                                       hover_color="#4ade80", corner_radius=6,
+                                       font=("Arial", 10, "bold"),
+                                       command=lambda id=item.item_id: manage_item(id))
+            manage_btn.grid(row=0, column=1, sticky="ew", padx=(4, 8), pady=8)
 
     def refresh_data():
         load_inventory_cards(search_term=search_entry.get(), filter_status=filter_combo.get())
@@ -416,7 +813,6 @@ def create_inventory_tab(parent_frame):
 
     bottom_controls = ctk.CTkFrame(inventory_frame, fg_color="transparent")
     bottom_controls.pack(fill="x", padx=20, pady=(0, 20))
-
     add_btn = ctk.CTkButton(bottom_controls, text="ADD", width=100, height=35, fg_color="#86efac", text_color="black", hover_color="#4ade80", font=("Arial", 14, "bold"), border_width=2, border_color="black", corner_radius=8)
     add_btn.pack(side="left")
 
@@ -426,7 +822,6 @@ def create_inventory_tab(parent_frame):
     def manage_item(item_id):
         print(f"Opening manage modal for item ID: {item_id}")
     return inventory_frame
-
 
 def create_inventory_tab_v2(parent_frame):
     inventory_repo = InventoryRepository()
@@ -450,6 +845,7 @@ def create_inventory_tab_v2(parent_frame):
         toolbar, width=120, height=30, values=["All"],
         fg_color=WHITE, text_color="black", button_color=WHITE, corner_radius=6,
         command=lambda _val=None: load_inventory_cards(),
+        state="readonly",
     )
     filter_combo.set("All")
     filter_combo.pack(side="left", padx=5)
@@ -536,7 +932,7 @@ def create_inventory_tab_v2(parent_frame):
                                             text_value(description).strip(), requires.get()))
                 modal.destroy()
                 on_created(category_name)
-            except (ValueError, mysql.connector.Error) as error:
+            except (ValueError, Exception) as error:
                 messagebox.showerror("Category Error", str(error), parent=modal)
 
         actions = ctk.CTkFrame(body, fg_color="transparent")
@@ -588,7 +984,7 @@ def create_inventory_tab_v2(parent_frame):
                 ))
                 modal.destroy()
                 on_updated(category_name)
-            except (ValueError, mysql.connector.Error) as error:
+            except (ValueError, Exception) as error:
                 messagebox.showerror("Category Error", str(error), parent=modal)
 
         actions = ctk.CTkFrame(body, fg_color="transparent")
@@ -617,7 +1013,8 @@ def create_inventory_tab_v2(parent_frame):
         dropdown = ctk.CTkComboBox(body, values=[], corner_radius=8,
                                    font=MODAL_FONT, dropdown_font=MODAL_FONT,
                                    fg_color=WHITE, text_color="black",
-                                   button_color=WHITE, dropdown_fg_color=WHITE)
+                                   button_color=WHITE, dropdown_fg_color=WHITE,
+                                   state="readonly")
         ctk.CTkLabel(body, text="Category Name", text_color=WHITE,
                      font=MODAL_FONT).pack(anchor="w", pady=(0, 4))
         dropdown.pack(fill="x", pady=(0, 8))
@@ -633,7 +1030,7 @@ def create_inventory_tab_v2(parent_frame):
         def refresh(selected_name="", clear_selection=False):
             try:
                 categories = category_repo.get_all()
-            except (ValueError, mysql.connector.Error) as error:
+            except (ValueError, Exception) as error:
                 messagebox.showerror("Category Error", str(error), parent=modal)
                 return
             by_display = {
@@ -681,7 +1078,7 @@ def create_inventory_tab_v2(parent_frame):
                         parent=modal,
                     )
                     return
-            except mysql.connector.Error as error:
+            except Exception as error:
                 messagebox.showerror("Category Error", str(error), parent=modal)
                 return
             if not messagebox.askyesno(
@@ -693,7 +1090,7 @@ def create_inventory_tab_v2(parent_frame):
             try:
                 category_repo.delete(category.category_id)
                 refresh(clear_selection=True)
-            except (ValueError, mysql.connector.Error) as error:
+            except (ValueError, Exception) as error:
                 messagebox.showerror("Category Error", str(error), parent=modal)
 
         def changed(display):
@@ -789,6 +1186,7 @@ def create_inventory_tab_v2(parent_frame):
                 corner_radius=8, font=MODAL_FONT, dropdown_font=MODAL_FONT,
                 fg_color=WHITE, text_color="black",
                 button_color=WHITE, dropdown_fg_color=WHITE,
+                state="readonly",
             )
             category_dropdown.pack(fill="x", pady=(0, 6))
             category_dropdown.set(f"{category.category_id} - {category.category_name}")
@@ -822,7 +1220,8 @@ def create_inventory_tab_v2(parent_frame):
                                corner_radius=8, font=MODAL_FONT,
                                dropdown_font=MODAL_FONT,
                                fg_color=WHITE, text_color="black",
-                               button_color=WHITE, dropdown_fg_color=WHITE)
+                               button_color=WHITE, dropdown_fg_color=WHITE,
+                               state="readonly")
         ctk.CTkLabel(body, text="Unit", text_color=WHITE,
                      font=MODAL_FONT).pack(anchor="w", pady=(0, 4))
         unit.pack(fill="x", pady=(0, 6))
@@ -903,8 +1302,12 @@ def create_inventory_tab_v2(parent_frame):
                 return
             try:
                 source = Image.open(path)
+                sw, sh = source.size
+                ratio = min(190 / max(1, sw), 135 / max(1, sh))
+                pw = max(1, int(sw * ratio))
+                ph = max(1, int(sh * ratio))
                 image_preview = ctk.CTkImage(
-                    light_image=source, dark_image=source, size=(190, 135)
+                    light_image=source, dark_image=source, size=(pw, ph)
                 )
                 preview_label.configure(image=image_preview, text="")
                 preview_label.image = image_preview
@@ -948,6 +1351,21 @@ def create_inventory_tab_v2(parent_frame):
                         parent=modal,
                     )
                     return
+                if serial_enabled.get():
+                    if not serial_value:
+                        messagebox.showwarning(
+                            "Missing Information",
+                            "Serial number is required when serial tracking is enabled.",
+                            parent=modal,
+                        )
+                        return
+                    if len(serial_value) > 8 or not serial_value.isalnum():
+                        messagebox.showwarning(
+                            "Invalid Serial Number",
+                            "Serial No. can only contain up to 8 letters or numbers.",
+                            parent=modal,
+                        )
+                        return
                 exclude_id = item_id if manage else 0
                 if inventory_repo.exists_duplicate(
                     name_value, code_value, serial_value, exclude_id
@@ -970,7 +1388,7 @@ def create_inventory_tab_v2(parent_frame):
                     (inventory_repo.update(entity) if manage else inventory_repo.add(entity))
                     modal.destroy()
                     load_inventory_cards()
-            except (ValueError, mysql.connector.Error) as error:
+            except (ValueError, Exception) as error:
                 messagebox.showerror("Inventory Error", str(error), parent=modal)
 
         def delete_item():
@@ -982,7 +1400,7 @@ def create_inventory_tab_v2(parent_frame):
                 inventory_repo.delete(item.item_id)
                 modal.destroy()
                 load_inventory_cards()
-            except (ValueError, mysql.connector.Error) as error:
+            except (ValueError, Exception) as error:
                 messagebox.showerror("Inventory Error", str(error), parent=modal)
 
         buttons = ctk.CTkFrame(body, fg_color="transparent")
@@ -1038,8 +1456,12 @@ def create_inventory_tab_v2(parent_frame):
         if item.image_path and os.path.isfile(item.image_path):
             try:
                 source = Image.open(item.image_path)
+                sw, sh = source.size
+                ratio = min(240 / max(1, sw), 280 / max(1, sh))
+                pw = max(1, int(sw * ratio))
+                ph = max(1, int(sh * ratio))
                 image_preview = ctk.CTkImage(
-                    light_image=source, dark_image=source, size=(240, 280)
+                    light_image=source, dark_image=source, size=(pw, ph)
                 )
                 preview_label.configure(image=image_preview, text="")
                 preview_label.image = image_preview
@@ -1069,11 +1491,11 @@ def create_inventory_tab_v2(parent_frame):
     def load_categories_filter():
         try:
             categories = category_repo.get_all()
-            values = ["All"] + [category.category_name for category in categories]
+            values = ["All", "Available", "Out of Stock", "Expired"] + [category.category_name for category in categories]
             filter_combo.configure(values=values)
             if filter_combo.get() not in values:
                 filter_combo.set("All")
-        except (ValueError, mysql.connector.Error):
+        except (ValueError, Exception):
             pass
 
     def refresh_inventory():
@@ -1085,51 +1507,107 @@ def create_inventory_tab_v2(parent_frame):
             widget.destroy()
         try:
             items = inventory_repo.get_all(search_term=search.get())
-            filter_category = filter_combo.get()
-            if filter_category and filter_category not in ("All", "All Categories"):
-                items = [item for item in items if item.category_name == filter_category]
-        except (ValueError, mysql.connector.Error) as error:
+            filter_choice = filter_combo.get()
+            if filter_choice == "Available":
+                items = [item for item in items if item.stock > 0 and not item.is_expired]
+            elif filter_choice == "Out of Stock":
+                items = [item for item in items if item.stock <= 0]
+            elif filter_choice == "Expired":
+                items = [item for item in items if item.is_expired]
+            elif filter_choice and filter_choice not in ("All", "All Categories"):
+                items = [item for item in items if item.category_name == filter_choice]
+        except (ValueError, Exception) as error:
             messagebox.showerror("Inventory Unavailable", str(error))
             return
         for index, item in enumerate(items):
-            card = ctk.CTkFrame(cards, fg_color=WHITE, border_width=2, border_color="black")
+            card = ctk.CTkFrame(cards, height=280, fg_color=WHITE, border_width=1, border_color="#d1d5db", corner_radius=8)
             card.grid(row=index // 3, column=index % 3, padx=10, pady=10, sticky="nsew")
-            ctk.CTkLabel(card, text=item.item_name, text_color="black",
-                         font=("Arial", 12, "bold")).pack(pady=8)
-            image_frame = ctk.CTkFrame(card, width=150, height=120,
-                                       fg_color="#e5e7eb", corner_radius=8)
-            image_frame.pack(fill="x", padx=8)
-            image_frame.pack_propagate(False)
-            image_label = ctk.CTkLabel(image_frame, text="No image",
-                                       text_color="black")
-            image_label.pack(expand=True)
+            card.grid_columnconfigure(0, weight=1)
+            card.grid_rowconfigure(1, weight=1)
+
+            name_frame = ctk.CTkFrame(card, fg_color=WHITE, corner_radius=0)
+            name_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
+            ctk.CTkLabel(name_frame, text=item.item_name,
+                         font=("Arial", 12, "bold"), text_color=TEXT_BLUE,
+                         anchor="center").pack(fill="x", padx=10, pady=(8, 4))
+            if item.is_expired:
+                stock_label_text = "Expired"
+                stock_color = "#dc2626"
+            elif item.stock <= 0:
+                stock_label_text = "Out of Stock"
+                stock_color = "#b91c1c"
+            else:
+                stock_label_text = f"Stock available: {item.stock}"
+                stock_color = "#15803d"
+            ctk.CTkLabel(
+                name_frame,
+                text=stock_label_text,
+                font=("Arial", 10, "bold"),
+                text_color=stock_color,
+                anchor="center",
+            ).pack(fill="x", padx=10, pady=(0, 6))
+            ctk.CTkFrame(name_frame, height=1, fg_color="#d1d5db").pack(fill="x", padx=10)
+
+            image_frame = ctk.CTkFrame(card, fg_color="#e5e7eb", corner_radius=6)
+            image_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+
+            image_label = ctk.CTkLabel(image_frame, text="No image available",
+                                       text_color="#6b7280", font=("Arial", 10))
+            image_label.place(relx=0.5, rely=0.5, anchor="center")
             if item.image_path and os.path.isfile(item.image_path):
                 try:
                     source = Image.open(item.image_path)
+                    img_w, img_h = source.size
+                    init_ratio = min(150 / max(1, img_w), 120 / max(1, img_h))
+                    init_w = max(1, int(img_w * init_ratio))
+                    init_h = max(1, int(img_h * init_ratio))
                     card_image = ctk.CTkImage(
-                        light_image=source, dark_image=source, size=(150, 120)
+                        light_image=source, dark_image=source, size=(init_w, init_h)
                     )
                     image_label.configure(image=card_image, text="")
                     image_label.image = card_image
+
+                    def on_v2_img_resize(event, src=source, lbl=image_label):
+                        w = event.width
+                        h = event.height
+                        if w > 10 and h > 10:
+                            sw, sh = src.size
+                            ratio = min(w / sw, h / sh)
+                            new_w = max(1, int(sw * ratio))
+                            new_h = max(1, int(sh * ratio))
+                            resized = ctk.CTkImage(light_image=src, dark_image=src, size=(new_w, new_h))
+                            lbl.configure(image=resized, text="")
+                            lbl.image = resized
+
+                    image_frame.bind("<Configure>", on_v2_img_resize)
                 except (OSError, ValueError):
                     pass
-            ctk.CTkLabel(card, text=f"Stock: {item.stock}", text_color="black").pack()
-            ctk.CTkButton(card, text="View Details",
-                          command=lambda item_id=item.item_id: show_details(item_id)).pack(
-                              fill="x", padx=8, pady=(8, 2))
-            ctk.CTkButton(card, text="Manage", fg_color="#86efac", text_color="black",
-                          command=lambda item_id=item.item_id: manage(item_id)).pack(
-                              fill="x", padx=8, pady=(2, 8))
 
-    ctk.CTkButton(inventory_frame, text="ADD", width=100, command=select_category,
-                  fg_color="#86efac", text_color="black").pack(anchor="w", padx=20, pady=(0, 20))
+            btn_frame = ctk.CTkFrame(card, fg_color=WHITE, corner_radius=0,
+                                     border_width=1, border_color="#d1d5db")
+            btn_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
+            btn_frame.grid_columnconfigure(0, weight=1)
+            btn_frame.grid_columnconfigure(1, weight=1)
+
+            ctk.CTkButton(btn_frame, text="View Details", height=35,
+                          fg_color=BLUE, hover_color="#1e40af", corner_radius=6,
+                          font=("Arial", 10, "bold"),
+                          command=lambda item_id=item.item_id: show_details(item_id)).grid(
+                              row=0, column=0, sticky="ew", padx=(8, 4), pady=8)
+            ctk.CTkButton(btn_frame, text="Manage", height=35,
+                          fg_color="#86efac", text_color="black", hover_color="#4ade80",
+                          corner_radius=6, font=("Arial", 10, "bold"),
+                          command=lambda item_id=item.item_id: manage(item_id)).grid(
+                              row=0, column=1, sticky="ew", padx=(4, 8), pady=8)
+
+    ctk.CTkButton(inventory_frame, text="ADD", font=("Arial", 18, "bold") , width=100, command=select_category,
+                  fg_color="#86efac", text_color="black").pack(anchor="w", padx=30, pady=(0, 30))
     load_categories_filter()
     load_inventory_cards()
     return inventory_frame
 
 inventory_frame = create_inventory_tab_v2(main_bg)
 inventory_frame.pack_forget()
-
 
 def create_requests_tab(parent_frame):
     request_repo = RequestRepository()
@@ -1153,6 +1631,7 @@ def create_requests_tab(parent_frame):
         toolbar_frame, width=120, height=30, values=["All", "Pending", "Approved",
                                                  "Active"],
         fg_color=WHITE, text_color="black", button_color=WHITE, corner_radius=6,
+        state="readonly",
     )
     filter_combo.set("All")
     filter_combo.pack(side="left", padx=5)
@@ -1256,7 +1735,7 @@ def create_requests_tab(parent_frame):
         selected["rows"] = []
         try:
             rows = request_repo.get_all()
-        except mysql.connector.Error as error:
+        except Exception as error:
             messagebox.showerror("Requests Unavailable", str(error), parent=app)
             return
 
@@ -1342,7 +1821,6 @@ def create_requests_tab(parent_frame):
     display_requests()
     return requests_frame
 
-
 def _modal_field(parent, label, value="", height=36, disabled=False):
     ctk.CTkLabel(parent, text=label, text_color=WHITE, font=MODAL_FONT).pack(
         anchor="w", pady=(6, 2)
@@ -1359,10 +1837,8 @@ def _modal_field(parent, label, value="", height=36, disabled=False):
         widget.configure(state="disabled")
     return widget
 
-
 def _field_value(widget):
     return widget.get("1.0", "end-1c") if isinstance(widget, ctk.CTkTextbox) else widget.get()
-
 
 class RequestModal:
     def __init__(self, parent, request, repository, on_changed):
@@ -1419,9 +1895,31 @@ class RequestModal:
         _modal_field(details, "Item ID", str(request.get("item_id", "")), disabled=True)
         _modal_field(details, "Item Details", request.get("item_description", ""), height=65, disabled=True)
         self.quantity = _modal_field(details, "Quantity/Serial No.", str(request.get("quantity", 1)))
+        ctk.CTkLabel(details, text="Due Date", text_color=WHITE, font=MODAL_FONT).pack(
+            anchor="w", pady=(6, 2)
+        )
+        self.due_date_entry = DateEntry(
+            details,
+            width=18,
+            date_pattern="yyyy-mm-dd",
+            background=TEXT_BLUE,
+            foreground=WHITE,
+            borderwidth=1,
+        )
+        self.due_date_entry.pack(fill="x", pady=(0, 6))
+        req_due = request.get("due_date")
+        if req_due:
+            if isinstance(req_due, (datetime, date)):
+                self.due_date_entry.set_date(req_due)
+            else:
+                try:
+                    self.due_date_entry.set_date(datetime.strptime(str(req_due)[:10], "%Y-%m-%d").date())
+                except Exception:
+                    pass
         self.status = ctk.CTkComboBox(
             details, values=["Pending", "Approved", "Cancelled", "Returned"],
             fg_color=WHITE, text_color="black", button_color=WHITE, corner_radius=8,
+            state="readonly",
         )
         ctk.CTkLabel(details, text="Unit/Status", text_color=WHITE, font=MODAL_FONT).pack(
             anchor="w", pady=(6, 2)
@@ -1463,8 +1961,12 @@ class RequestModal:
         )
 
     def save_edits(self):
+        if not messagebox.askyesno("Update Request", "Are you sure you want to update this request?", parent=self.modal):
+            return
         try:
             self.request["quantity"] = int(self.quantity.get())
+            if hasattr(self, "due_date_entry"):
+                self.request["due_date"] = self.due_date_entry.get_date()
             new_status = self.status.get()
             if new_status == "Cancelled" and self.request.get("request_status") != "Cancelled":
                 self._show_cancel_modal()
@@ -1473,7 +1975,7 @@ class RequestModal:
             self.repository.update(self.request)
             self.on_changed()
             messagebox.showinfo("Request Updated", "Request details were updated.", parent=self.modal)
-        except (ValueError, mysql.connector.Error) as error:
+        except (ValueError, Exception) as error:
             messagebox.showerror("Request Error", str(error), parent=self.modal)
 
     def _show_cancel_modal(self):
@@ -1529,7 +2031,7 @@ class RequestModal:
                     "The item request has been cancelled and logged into transactions.",
                     parent=app,
                 )
-            except (ValueError, mysql.connector.Error) as error:
+            except (ValueError, Exception) as error:
                 messagebox.showerror("Cancellation Error", str(error), parent=cancel_modal)
 
         btn_row = ctk.CTkFrame(body, fg_color="transparent")
@@ -1551,7 +2053,7 @@ class RequestModal:
             self.repository.delete(self.request["request_id"])
             self.modal.destroy()
             self.on_changed()
-        except (ValueError, mysql.connector.Error) as error:
+        except (ValueError, Exception) as error:
             messagebox.showerror("Request Error", str(error), parent=self.modal)
 
     def approve(self):
@@ -1561,7 +2063,7 @@ class RequestModal:
             self.repository.approve(self.request["request_id"])
             self.modal.destroy()
             self.on_changed()
-        except mysql.connector.Error as error:
+        except Exception as error:
             messagebox.showerror("Request Error", str(error), parent=self.modal)
 
     def confirm_lifecycle(self):
@@ -1589,7 +2091,7 @@ class RequestModal:
                 raise ValueError("The request could not be updated.")
             self.modal.destroy()
             self.on_changed()
-        except (ValueError, mysql.connector.Error) as error:
+        except (ValueError, Exception) as error:
             messagebox.showerror("Request Error", str(error), parent=self.modal)
 
     def _show_return_condition_modal(self):
@@ -1618,7 +2120,7 @@ class RequestModal:
         condition = ctk.CTkComboBox(
             fields, values=["Good", "Damaged", "Needs Repair", "Lost"],
             fg_color=WHITE, text_color="black", button_color=WHITE,
-            corner_radius=8,
+            corner_radius=8, state="readonly",
         )
         condition.grid(row=1, column=0, sticky="ew", padx=(0, 10))
         condition.set("Good")
@@ -1665,7 +2167,7 @@ class RequestModal:
                 condition_modal.destroy()
                 self.modal.destroy()
                 self.on_changed()
-            except (ValueError, mysql.connector.Error) as error:
+            except (ValueError, Exception) as error:
                 messagebox.showerror("Return Error", str(error), parent=condition_modal)
 
         actions = ctk.CTkFrame(body, fg_color="transparent")
@@ -1679,7 +2181,6 @@ class RequestModal:
             actions, text="Submit Return", height=36, fg_color=GREEN,
             text_color="black", command=submit,
         ).grid(row=0, column=1, sticky="ew", padx=(6, 0))
-
 
 class NotifyModal:
     def __init__(self, parent, request, repository):
@@ -1707,13 +2208,11 @@ class NotifyModal:
             self.repository.notify(self.request["requester_id"], _field_value(self.message))
             self.modal.destroy()
             messagebox.showinfo("Notification Sent", "The notification was sent.", parent=app)
-        except (ValueError, mysql.connector.Error) as error:
+        except (ValueError, Exception) as error:
             messagebox.showerror("Notification Error", str(error), parent=self.modal)
-
 
 requests_frame = create_requests_tab(main_bg)
 requests_frame.pack_forget()
-
 
 def create_transactions_tab(parent_frame):
     repository = TransactionRepository()
@@ -1742,7 +2241,8 @@ def create_transactions_tab(parent_frame):
     filter_combo = ctk.CTkComboBox(toolbar, width=120, height=30,
                                    values=["All", "Cancelled", "Returned"],
                                    fg_color=WHITE, text_color="black",
-                                   button_color=WHITE, corner_radius=6)
+                                   button_color=WHITE, corner_radius=6,
+                                   state="readonly")
     filter_combo.set("All")
     filter_combo.pack(side="left", padx=5)
     search = ctk.CTkEntry(toolbar, width=150, height=30, fg_color=WHITE,
@@ -1779,7 +2279,7 @@ def create_transactions_tab(parent_frame):
         state["widgets"] = []
         try:
             rows = repository.get_all(state["mode"])
-        except (ValueError, mysql.connector.Error) as error:
+        except (ValueError, Exception) as error:
             messagebox.showerror("Transactions Unavailable", str(error), parent=app)
             return
         filter_value = filter_combo.get()
@@ -1826,7 +2326,7 @@ def create_transactions_tab(parent_frame):
             transaction = repository.get_details(
                 row["transaction_id"], state["mode"]
             )
-        except (ValueError, mysql.connector.Error) as error:
+        except (ValueError, Exception) as error:
             messagebox.showerror("Transaction Details Unavailable", str(error), parent=app)
             return
         if transaction is None:
@@ -1941,7 +2441,7 @@ def create_transactions_tab(parent_frame):
             if not action(row["transaction_id"]):
                 raise ValueError("The transaction could not be updated.")
             load_rows()
-        except (ValueError, mysql.connector.Error) as error:
+        except (ValueError, Exception) as error:
             messagebox.showerror("Transaction Error", str(error), parent=app)
 
     def switch_mode():
@@ -1985,7 +2485,6 @@ def create_transactions_tab(parent_frame):
     update_actions()
     load_rows()
     return frame
-
 
 transactions_frame = create_transactions_tab(main_bg)
 transactions_frame.pack_forget()
@@ -2194,6 +2693,7 @@ class AccountEditor:
         combo = ctk.CTkComboBox(
             parent, values=values, corner_radius=8, fg_color="#f3f4f6",
             text_color="black", button_color="#d1d5db", command=command,
+            state="readonly",
         )
         combo.grid(row=row * 2 + 1, column=column, sticky="ew", padx=4, pady=(0, 6))
         combo.set(value)
@@ -2278,7 +2778,7 @@ class AccountEditor:
                 )
             self.modal.destroy()
             self.on_changed()
-        except (ValueError, mysql.connector.Error) as error:
+        except (ValueError, Exception) as error:
             messagebox.showerror("Account Error", str(error), parent=self.modal)
 
 class AdminPasswordModal:
@@ -2334,7 +2834,7 @@ class AdminPasswordModal:
             self.repository.change_password(self.account["account_id"], self.password.get())
             self.modal.destroy()
             self.on_changed()
-        except (ValueError, mysql.connector.Error) as error:
+        except (ValueError, Exception) as error:
             messagebox.showerror("Password Error", str(error), parent=self.modal)
 
 def create_accounts_tab(parent_frame):
@@ -2400,7 +2900,7 @@ def create_accounts_tab(parent_frame):
         configure_columns(table, len(headers))
         try:
             rows = repository.get_all_accounts(state["mode"])
-        except (ValueError, mysql.connector.Error) as error:
+        except (ValueError, Exception) as error:
             messagebox.showerror("Accounts Unavailable", str(error), parent=app)
             return
         term = search.get().strip().lower()
@@ -2473,7 +2973,7 @@ def create_accounts_tab(parent_frame):
             try:
                 repository.archive_user(account["account_id"])
                 refresh()
-            except (ValueError, mysql.connector.Error) as error:
+            except (ValueError, Exception) as error:
                 messagebox.showerror("Archive Account", str(error), parent=app)
 
     def move(action):
@@ -2483,7 +2983,7 @@ def create_accounts_tab(parent_frame):
                 if not action(account.get("account_archive_id")):
                     raise ValueError("The archived account could not be found.")
                 refresh()
-            except (ValueError, mysql.connector.Error) as error:
+            except (ValueError, Exception) as error:
                 messagebox.showerror("Delete Account", str(error), parent=app)
 
     def update_actions():
@@ -2499,7 +2999,6 @@ def create_accounts_tab(parent_frame):
     update_actions()
     load_rows()
     return frame
-
 
 accounts_frame = create_accounts_tab(main_bg)
 accounts_frame.pack_forget()
@@ -2616,5 +3115,4 @@ def show_tab(selected_tab):
 
     for tab, button in nav_buttons.items():
         button.configure(fg_color=DARK_BLUE if tab == selected_tab else TEXT_BLUE)
-
 app.mainloop()

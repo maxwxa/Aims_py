@@ -5,8 +5,7 @@ from datetime import date, datetime, timedelta
 from tkinter import messagebox
 
 import customtkinter as ctk
-import mysql.connector
-from PIL import Image
+from PIL import Image, ImageTk
 from tkcalendar import DateEntry
 
 from models.users import Session
@@ -34,6 +33,17 @@ ctk.set_appearance_mode("light")
 app = ctk.CTk()
 app.geometry("1000x650")
 app.title("Academic Inventory Management System - User Dashboard")
+
+icon_path = os.path.join(os.path.dirname(__file__), "assets", "Aims_plain_white.png")
+if not os.path.exists(icon_path):
+    icon_path = os.path.join(os.path.dirname(__file__), "Assets", "Aims_plain_white.png")
+if os.path.exists(icon_path):
+    try:
+        app_icon = ImageTk.PhotoImage(Image.open(icon_path))
+        app.wm_iconphoto(True, app_icon)
+        app._app_icon = app_icon
+    except Exception:
+        pass
 try:
     app.state("zoomed")
 except Exception:
@@ -57,24 +67,21 @@ if user_role not in {"user", "student"}:
     sys.exit()
 
 def load_my_requests():
-    """Load user's item requests from the database with inventory details."""
     try:
         return RequestRepository().get_for_user(current_user["user_id"])
-    except mysql.connector.Error as e:
+    except Exception as e:
         print(f"Error loading requests: {e}")
         return []
 
 def load_notifications():
-    """Load user's notifications from the database."""
     try:
         return RequestRepository().get_notifications(current_user["user_id"])
-    except mysql.connector.Error as e:
+    except Exception as e:
         print(f"Error loading notifications: {e}")
         return []
 
 
 def load_user_info():
-    """Load current user's profile information from the database."""
     try:
         row = UserRepository().get_by_id(current_user["user_id"])
         
@@ -89,7 +96,7 @@ def load_user_info():
                 "course": row.get("course", ""),
                 "last_name": last_name
             }
-    except mysql.connector.Error as e:
+    except Exception as e:
         print(f"Error loading user info: {e}")
     
     gmail = current_user.get("gmail", "user@example.com")
@@ -123,7 +130,9 @@ class UserDashboard:
         header_frame.pack(fill="x", side="top")
         header_frame.pack_propagate(False)
         
-        logo_path = r"C:\Users\maxwx\OneDrive\Documents\SDF04-Aims\Assets\Aims_plain_white.png"
+        logo_path = os.path.join(os.path.dirname(__file__), "assets", "Aims_plain_white.png")
+        if not os.path.exists(logo_path):
+            logo_path = os.path.join(os.path.dirname(__file__), "Assets", "Aims_plain_white.png")
         try:
             if os.path.exists(logo_path):
                 logo_img = ctk.CTkImage(light_image=Image.open(logo_path), size=(50, 50))
@@ -141,6 +150,9 @@ class UserDashboard:
                                    font=("Arial", 14, "bold"),
                                    command=self._show_logout_modal)
         logout_btn.pack(side="right", padx=20, pady=22)
+        current_date_str = datetime.now().strftime("%A, %B %d, %Y")
+        date_label = ctk.CTkLabel(header_frame, text=current_date_str, font=("Arial", 14, "bold"), text_color=WHITE)
+        date_label.pack(side="right", padx=(0, 15), pady=22)
     
     def _build_navigation(self):
         """Build the pill-shaped navigation bar with centered buttons."""
@@ -224,6 +236,7 @@ class UserDashboard:
         self.items_scroll = ctk.CTkScrollableFrame(items_panel, fg_color=WHITE,
                                                    corner_radius=0)
         self.items_scroll.pack(fill="both", expand=True, padx=15, pady=15)
+        self.items_scroll.grid_columnconfigure((0, 1), weight=1)
         
         self._load_items_cards()
         
@@ -295,7 +308,8 @@ class UserDashboard:
         self.items_filter = ctk.CTkComboBox(controls_frame, width=130, height=30,
                                             corner_radius=6, fg_color=WHITE,
                                             text_color="black", button_color=WHITE,
-                                            values=["All Categories"])
+                                            values=["All Categories"],
+                                            state="readonly")
         self.items_filter.pack(side="left", padx=(0, 12))
         self.items_filter.set("All Categories")
         self.items_filter.bind("<<ComboboxSelected>>", lambda e: self._load_inventory_grid())
@@ -315,7 +329,7 @@ class UserDashboard:
         self.catalogue_container = ctk.CTkScrollableFrame(catalogue_panel, fg_color=BG_BLUE,
                                                           corner_radius=0)
         self.catalogue_container.pack(fill="both", expand=True, padx=15, pady=15)
-        self.catalogue_container.grid_columnconfigure((0, 1), weight=1)
+        self.catalogue_container.grid_columnconfigure((0, 1, 2), weight=1)
         self._load_categories_filter()
         self._load_inventory_grid()
         
@@ -335,17 +349,14 @@ class UserDashboard:
         self._load_notifications_list()
     
     def _load_categories_filter(self):
-        """Load categories into the filter combobox."""
         try:
             categories = self.category_repo.get_all()
-            values = ["All Categories"] + [cat.category_name for cat in categories]
+            values = ["All Categories", "Available", "Out of Stock", "Expired"] + [cat.category_name for cat in categories]
             self.items_filter.configure(values=values)
-        except mysql.connector.Error as e:
+        except Exception as e:
             print(f"Error loading categories: {e}")
     
     def _load_inventory_grid(self):
-        """Load and display inventory items in a 3-column grid."""
-        # Clear existing cards
         for widget in self.catalogue_container.winfo_children():
             widget.destroy()
         
@@ -355,17 +366,22 @@ class UserDashboard:
         try:
             items = self.inventory_repo.get_all(search_term=search_term)
             
-            # Filter by category if not "All Categories"
-            if filter_category and filter_category != "All Categories":
+            if filter_category == "Available":
+                items = [item for item in items if item.stock > 0 and not item.is_expired]
+            elif filter_category == "Out of Stock":
+                items = [item for item in items if item.stock <= 0]
+            elif filter_category == "Expired":
+                items = [item for item in items if item.is_expired]
+            elif filter_category and filter_category != "All Categories":
                 items = [item for item in items if item.category_name == filter_category]
-        except mysql.connector.Error as e:
+        except Exception as e:
             messagebox.showerror("Inventory Unavailable",
                                 f"Could not load inventory data: {e}")
             return
         
         for i, item in enumerate(items):
-            row = i // 2
-            col = i % 2
+            row = i // 3
+            col = i % 3
             
             card = self._create_inventory_card(self.catalogue_container, item)
             card.grid(row=row, column=col, padx=8, pady=8, sticky="nsew")
@@ -381,31 +397,57 @@ class UserDashboard:
         name_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
         ctk.CTkLabel(name_frame, text=item.item_name,
                      font=("Arial", 12, "bold"), text_color=TEXT_BLUE,
-                     anchor="center").pack(fill="x", padx=10, pady=(8, 8))
-        stock_color = "#15803d" if item.stock > 0 else "#b91c1c"
+                     anchor="center").pack(fill="x", padx=10, pady=(8, 4))
+        if item.is_expired:
+            stock_label_text = "Expired"
+            stock_color = "#dc2626"
+        elif item.stock <= 0:
+            stock_label_text = "Out of Stock"
+            stock_color = "#b91c1c"
+        else:
+            stock_label_text = f"Stock available: {item.stock}"
+            stock_color = "#15803d"
         ctk.CTkLabel(
             name_frame,
-            text=f"Stock available: {item.stock}",
+            text=stock_label_text,
             font=("Arial", 10, "bold"),
             text_color=stock_color,
             anchor="center",
         ).pack(fill="x", padx=10, pady=(0, 6))
         # Bottom border line
         ctk.CTkFrame(name_frame, height=1, fg_color="#d1d5db").pack(fill="x", padx=10)
-        image_frame = ctk.CTkFrame(card, fg_color="#e5e7eb", corner_radius=0)
+        image_frame = ctk.CTkFrame(card, fg_color="#e5e7eb", corner_radius=6)
         image_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
         
         image_label = ctk.CTkLabel(image_frame, text="No image available",
                                    text_color="#6b7280", font=("Arial", 10))
-        image_label.pack(expand=True)
+        image_label.place(relx=0.5, rely=0.5, anchor="center")
         
         image_path = item.image_path
         if image_path and os.path.isfile(image_path):
             try:
                 source = Image.open(image_path)
-                card_image = ctk.CTkImage(light_image=source, dark_image=source, size=(150, 120))
+                img_w, img_h = source.size
+                init_ratio = min(150 / max(1, img_w), 120 / max(1, img_h))
+                init_w = max(1, int(img_w * init_ratio))
+                init_h = max(1, int(img_h * init_ratio))
+                card_image = ctk.CTkImage(light_image=source, dark_image=source, size=(init_w, init_h))
                 image_label.configure(image=card_image, text="")
                 image_label.image = card_image
+
+                def on_resize(event, src=source, lbl=image_label):
+                    w = event.width
+                    h = event.height
+                    if w > 10 and h > 10:
+                        sw, sh = src.size
+                        ratio = min(w / sw, h / sh)
+                        new_w = max(1, int(sw * ratio))
+                        new_h = max(1, int(sh * ratio))
+                        resized_img = ctk.CTkImage(light_image=src, dark_image=src, size=(new_w, new_h))
+                        lbl.configure(image=resized_img, text="")
+                        lbl.image = resized_img
+
+                image_frame.bind("<Configure>", on_resize)
             except (OSError, ValueError):
                 pass
         btn_frame = ctk.CTkFrame(card, fg_color=WHITE, corner_radius=0,
@@ -420,16 +462,19 @@ class UserDashboard:
                                  command=lambda iid=item.item_id: self._show_view_details_modal(iid))
         view_btn.grid(row=0, column=0, sticky="ew", padx=(8, 4), pady=8)
         
+        is_expired = item.is_expired
         is_out_of_stock = item.stock <= 0
-        request_btn = ctk.CTkButton(btn_frame, text="Request", height=35,
-                                    fg_color="#9ca3af" if is_out_of_stock else "#22c55e",
-                                    hover_color="#9ca3af" if is_out_of_stock else "#16a34a",
+        cannot_request = is_expired or is_out_of_stock
+        btn_text = "Expired" if is_expired else ("Out of Stock" if is_out_of_stock else "Request")
+        request_btn = ctk.CTkButton(btn_frame, text=btn_text, height=35,
+                                    fg_color="#9ca3af" if cannot_request else "#22c55e",
+                                    hover_color="#9ca3af" if cannot_request else "#16a34a",
                                     corner_radius=6,
                                     font=("Arial", 10, "bold"),
                                     command=lambda iid=item.item_id: self._show_item_request_modal(iid))
         request_btn.grid(row=0, column=1, sticky="ew", padx=(4, 8), pady=8)
-        if is_out_of_stock:
-            request_btn.configure(state="disabled", text="Out of Stock")
+        if cannot_request:
+            request_btn.configure(state="disabled")
         
         return card
     
@@ -498,7 +543,7 @@ class UserDashboard:
             nonlocal rows
             try:
                 rows = TransactionRepository().get_user_history(current_user["user_id"])
-            except mysql.connector.Error as error:
+            except Exception as error:
                 messagebox.showerror("History Unavailable", str(error), parent=app)
                 rows = []
             render_rows()
@@ -525,7 +570,7 @@ class UserDashboard:
                     str(row.get("transaction_type", "")).strip().lower() == "cancelled"
                     or str(row.get("request_status", "")).strip().lower() == "cancelled"
                 )
-                received_by = "N/A" if is_cancelled else (row.get("confirmed_by_name") or row.get("requester_name") or "N/A")
+                received_by = "N/A" if is_cancelled else (row.get("requester_name") or row.get("confirmed_by_name") or "N/A")
                 values = [
                     row.get("transaction_id", ""), row.get("item_name", ""),
                     row.get("transaction_type", ""), row.get("quantity", ""),
@@ -605,7 +650,7 @@ class UserDashboard:
             or str(transaction.get("request_status", "")).strip().lower() == "cancelled"
         )
         condition_label = "Cancellation Reason" if is_cancelled else "Condition Status"
-        received_by = "N/A" if is_cancelled else (transaction.get("confirmed_by_name") or transaction.get("requester_name") or "N/A")
+        received_by = "N/A" if is_cancelled else (transaction.get("requester_name") or transaction.get("confirmed_by_name") or "N/A")
 
         details = [
             ("Transaction ID", f"TRX-{transaction.get('transaction_id', 'N/A')}"),
@@ -660,7 +705,7 @@ class UserDashboard:
         body.grid_columnconfigure((0, 1), weight=1, uniform="profile")
         try:
             profile = UserRepository().get_by_id(current_user["user_id"]) or {}
-        except mysql.connector.Error as error:
+        except Exception as error:
             messagebox.showerror("Profile Unavailable", str(error), parent=app)
             profile = dict(current_user)
 
@@ -724,11 +769,15 @@ class UserDashboard:
         # Clear existing cards
         for widget in self.items_scroll.winfo_children():
             widget.destroy()
-        for req in self.requests:
-            if req.get("request_status") in {"Returned", "Cancelled"}:
-                continue
+        visible_requests = [
+            req for req in self.requests
+            if req.get("request_status") not in {"Returned", "Cancelled"}
+        ]
+        for i, req in enumerate(visible_requests):
+            row = i // 2
+            col = i % 2
             card = self._create_request_card(self.items_scroll, req)
-            card.pack(fill="x", padx=0, pady=0)
+            card.grid(row=row, column=col, padx=8, pady=8, sticky="nsew")
     
     def _create_request_card(self, parent, request):
         """Create a single request card with proper structure and internal padding."""
@@ -743,20 +792,38 @@ class UserDashboard:
                      anchor="center").pack(fill="x", padx=10, pady=(8, 8))
         ctk.CTkFrame(name_frame, height=1, fg_color="#d1d5db").pack(fill="x", padx=10)
         
-        image_frame = ctk.CTkFrame(card, fg_color="#e5e7eb", corner_radius=0)
+        image_frame = ctk.CTkFrame(card, fg_color="#e5e7eb", corner_radius=6)
         image_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
         
         image_label = ctk.CTkLabel(image_frame, text="No image available",
                                    text_color="#6b7280", font=("Arial", 10))
-        image_label.pack(expand=True)
+        image_label.place(relx=0.5, rely=0.5, anchor="center")
         
         image_path = request.get("image_path")
         if image_path and os.path.isfile(image_path):
             try:
                 source = Image.open(image_path)
-                card_image = ctk.CTkImage(light_image=source, dark_image=source, size=(150, 120))
+                img_w, img_h = source.size
+                init_ratio = min(150 / max(1, img_w), 120 / max(1, img_h))
+                init_w = max(1, int(img_w * init_ratio))
+                init_h = max(1, int(img_h * init_ratio))
+                card_image = ctk.CTkImage(light_image=source, dark_image=source, size=(init_w, init_h))
                 image_label.configure(image=card_image, text="")
                 image_label.image = card_image
+
+                def on_req_resize(event, src=source, lbl=image_label):
+                    w = event.width
+                    h = event.height
+                    if w > 10 and h > 10:
+                        sw, sh = src.size
+                        ratio = min(w / sw, h / sh)
+                        new_w = max(1, int(sw * ratio))
+                        new_h = max(1, int(sh * ratio))
+                        resized_img = ctk.CTkImage(light_image=src, dark_image=src, size=(new_w, new_h))
+                        lbl.configure(image=resized_img, text="")
+                        lbl.image = resized_img
+
+                image_frame.bind("<Configure>", on_req_resize)
             except (OSError, ValueError):
                 pass
 
@@ -833,116 +900,102 @@ class UserDashboard:
             self._create_notification_row(self.notif_scroll, notif)
     
     def _create_notification_row(self, parent, notification):
-     is_unread = notification["notif_isread"] == 0
-    
-     row = ctk.CTkFrame(parent, fg_color=WHITE if is_unread else "#f9fafb",
-                      corner_radius=6, border_width=1, border_color="#d1d5db",
-                      height=46)
-     row.pack(fill="x", padx=8, pady=3)
-     row.pack_propagate(False)
-    
-     content = ctk.CTkFrame(row, fg_color="transparent")
-     content.pack(fill="both", expand=True, padx=10, pady=3)
-     content.grid_rowconfigure(0, weight=1)
-     content.grid_columnconfigure(0, weight=0, minsize=120)
-     content.grid_columnconfigure(1, weight=0, minsize=1)  
-     content.grid_columnconfigure(2, weight=1)  
-     content.grid_columnconfigure(3, weight=0, minsize=1) 
-     content.grid_columnconfigure(4, weight=0, minsize=100)
-     content.grid_columnconfigure(5, weight=0, minsize=90)
-    
-     date_str = notification["notif_create"].strftime("%Y-%m-%d %H:%M")
-     date_label = ctk.CTkLabel(content, text=date_str,
-                              font=("Arial", 10, "bold") if is_unread else ("Arial", 10),
-                              text_color=TEXT_BLUE, anchor="w")
-     date_label.grid(row=0, column=0, sticky="ew", padx=(15, 3), pady=3)
+        is_unread = notification.get("notif_isread", 0) == 0
 
-     view_btn = ctk.CTkButton(content, text="View", width=70, height=28,
-                             font=("Arial", 11, "bold"), fg_color=BLUE, hover_color="#1e40af",
-                             command=lambda: self._show_notification_modal(notification))
-     view_btn.grid(row=0, column=2, sticky="w", padx=10, pady=3)
-     ctk.CTkFrame(content, width=1, height=1, fg_color="#d1d5db").grid(row=0, column=1, sticky="ns", pady=3)
-    
-     notif_type = notification["notif_type"]
-     type_prefix = "From: " if notif_type == "Admin" else "System: "
-     type_label = ctk.CTkLabel(content, text=f"{type_prefix}{notif_type}",
-                              font=("Arial", 10, "italic"),
-                              text_color="#6b7280", anchor="e")
-     type_label.grid(row=0, column=4, sticky="ew", padx=(3, 5), pady=3)
-    
-     if is_unread:
-        indicator = ctk.CTkFrame(content, width=8, height=8, fg_color=BLUE, corner_radius=4)
-        indicator.grid(row=0, column=0, sticky="w", padx=(2, 0), pady=3)
-
-        def open_modal(_event=None):
-            self._show_notification_modal(notification)
-
-        for widget in (row, content, *content.winfo_children()):
-            widget.bind("<Button-1>", open_modal)
-
-    def _show_notification_modal(self, notification):
-        """Show the complete notification message in a separate window."""
-        modal = ctk.CTkToplevel(app)
-        modal.title("Notification")
-        modal.geometry("540x360")
-        modal.minsize(420, 280)
-        modal.configure(fg_color=MODAL_BG)
-        modal.transient(app)
-        modal.grab_set()
-        modal.protocol("WM_DELETE_WINDOW", modal.destroy)
-
-        body = ctk.CTkFrame(modal, fg_color=MODAL_BG)
-        body.pack(fill="both", expand=True, padx=24, pady=24)
-        body.grid_columnconfigure(0, weight=1)
-        body.grid_rowconfigure(2, weight=1)
-
-        ctk.CTkLabel(
-            body, text="Notification", text_color=WHITE, font=MODAL_TITLE_FONT,
-        ).grid(row=0, column=0, sticky="w", pady=(0, 10))
-
-        date_str = notification["notif_create"].strftime("%Y-%m-%d %H:%M")
-        notif_type = notification["notif_type"]
-        ctk.CTkLabel(
-            body, text=f"{date_str}  |  {notif_type}",
-            text_color="#bfdbfe", font=("Arial", 11),
-        ).grid(row=1, column=0, sticky="w", pady=(0, 12))
-
-        message_frame = ctk.CTkScrollableFrame(body, fg_color=WHITE, corner_radius=6)
-        message_frame.grid(row=2, column=0, sticky="nsew", pady=(0, 16))
-        ctk.CTkLabel(
-            message_frame,
-            text=str(notification["notif_message"]),
-            text_color="black",
-            font=MODAL_FONT,
-            wraplength=460,
-            anchor="nw",
-            justify="left",
-        ).pack(fill="x", padx=14, pady=14)
-
-        actions = ctk.CTkFrame(body, fg_color="transparent")
-        actions.grid(row=3, column=0, sticky="ew")
-        actions.grid_columnconfigure(0, weight=1)
-        actions.grid_columnconfigure(1, weight=1)
-
-        def mark_read_and_close():
-            modal.destroy()
-            self._mark_notification_read(notification["notif_id"])
-
-        if notification["notif_isread"] == 0:
-            ctk.CTkButton(
-                actions, text="Mark Read", height=36, fg_color=BLUE,
-                hover_color="#1e40af", corner_radius=8,
-                command=mark_read_and_close,
-            ).grid(row=0, column=0, sticky="ew", padx=(0, 6))
-
-        ctk.CTkButton(
-            actions, text="Close", height=36, fg_color=RED, corner_radius=8,
-            command=modal.destroy,
-        ).grid(
-            row=0, column=1 if notification["notif_isread"] == 0 else 0,
-            columnspan=1, sticky="ew",
-            padx=(6, 0) if notification["notif_isread"] == 0 else 0,
+        card = ctk.CTkFrame(
+            parent,
+            fg_color=WHITE if is_unread else "#f9fafb",
+            corner_radius=8,
+            border_width=1,
+            border_color="#93c5fd" if is_unread else "#d1d5db",
         )
+        card.pack(fill="x", padx=8, pady=6)
+
+        # Header area: Indicator, Date, Type
+        header = ctk.CTkFrame(card, fg_color="transparent")
+        header.pack(fill="x", padx=12, pady=(10, 4))
+        
+        if is_unread:
+            indicator = ctk.CTkFrame(header, width=8, height=8, fg_color=BLUE, corner_radius=4)
+            indicator.pack(side="left", padx=(0, 6))
+
+        date_val = notification.get("notif_create")
+        if isinstance(date_val, (datetime, date)):
+            date_str = date_val.strftime("%Y-%m-%d %H:%M")
+        else:
+            date_str = str(date_val or "")
+
+        date_label = ctk.CTkLabel(
+            header,
+            text=date_str,
+            font=("Arial", 11, "bold") if is_unread else ("Arial", 11),
+            text_color=TEXT_BLUE if is_unread else "#4b5563",
+            anchor="w",
+        )
+        date_label.pack(side="left")
+
+        notif_type = notification.get("notif_type", "")
+        type_prefix = "From: " if notif_type == "Admin" else "Type: "
+        type_label = ctk.CTkLabel(
+            header,
+            text=f"{type_prefix}{notif_type}",
+            font=("Arial", 10, "italic"),
+            text_color="#6b7280",
+            anchor="e",
+        )
+        type_label.pack(side="right")
+        ctk.CTkFrame(card, height=1, fg_color="#e5e7eb").pack(fill="x", padx=12, pady=(2, 6))
+        msg_frame = ctk.CTkFrame(card, fg_color="transparent")
+        msg_frame.pack(fill="x", expand=True, padx=12, pady=4)
+
+        msg_label = ctk.CTkLabel(
+            msg_frame,
+            text=str(notification.get("notif_message", "")),
+            text_color="black" if is_unread else "#374151",
+            font=("Arial", 11),
+            anchor="w",
+            justify="left",
+            wraplength=300,
+        )
+        msg_label.pack(fill="x", expand=True, anchor="w")
+
+        def _update_wrap(event):
+            new_wrap = max(80, event.width - 10)
+            msg_label.configure(wraplength=new_wrap)
+
+        msg_frame.bind("<Configure>", _update_wrap)
+
+        footer = ctk.CTkFrame(card, fg_color="transparent")
+        footer.pack(fill="x", padx=12, pady=(4, 10))
+
+        if is_unread:
+            mark_btn = ctk.CTkButton(
+                footer,
+                text="Mark as Read",
+                width=100,
+                height=28,
+                font=("Arial", 10, "bold"),
+                fg_color=BLUE,
+                hover_color="#1e40af",
+                corner_radius=6,
+                command=lambda nid=notification["notif_id"]: self._mark_notification_read(nid),
+            )
+        else:
+            mark_btn = ctk.CTkButton(
+                footer,
+                text="Read",
+                width=80,
+                height=28,
+                font=("Arial", 10),
+                fg_color="#e5e7eb",
+                text_color="#6b7280",
+                hover_color="#e5e7eb",
+                corner_radius=6,
+                state="disabled",
+            )
+        mark_btn.pack(side="right")
+
+        return card
     
     def _filter_items(self):
         """Filter items based on search text."""
@@ -952,12 +1005,15 @@ class UserDashboard:
             widget.destroy()
         
         filtered = [req for req in self.requests 
-                   if search_term in req["item_name"].lower() or 
-                      search_term in req.get("item_code", "").lower()]
+                   if (search_term in req["item_name"].lower() or 
+                       search_term in req.get("item_code", "").lower()) and
+                      req.get("request_status") not in {"Returned", "Cancelled"}]
         
-        for req in filtered:
+        for i, req in enumerate(filtered):
+            row = i // 2
+            col = i % 2
             card = self._create_request_card(self.items_scroll, req)
-            card.pack(fill="x", padx=0, pady=0)
+            card.grid(row=row, column=col, padx=8, pady=8, sticky="nsew")
     
     def _filter_notifications(self):
         """Filter notifications based on search text."""
@@ -972,8 +1028,6 @@ class UserDashboard:
         
         for notif in filtered:
             self._create_notification_row(self.notif_scroll, notif)
-        
-        ctk.CTkFrame(self.notif_scroll, height=1, fg_color="#333333").pack(fill="x")
     
     def _show_tab(self, selected_tab):
         """Switch between tabs."""
@@ -1005,30 +1059,34 @@ class UserDashboard:
             )
             self.notifications = load_notifications()
             self._load_notifications_list()
-        except mysql.connector.Error as error:
+        except Exception as error:
             messagebox.showerror("Notification Error", str(error), parent=app)
     
     def _show_return_modal(self, request):
-        """Show the item return modal."""
         ItemReturnModal(app, request)
     
     def _show_view_details_modal(self, item_id):
-        """Show the View Details modal for an inventory item."""
         try:
             item = self.inventory_repo.get_by_id(item_id)
             if item:
                 ViewDetailsModal(app, item)
-        except mysql.connector.Error as e:
+        except Exception as e:
             messagebox.showerror("Error", f"Could not load item details: {e}")
     
     def _show_item_request_modal(self, item_id):
-        """Show the Item Request modal for an inventory item."""
         try:
             item = self.inventory_repo.get_by_id(item_id)
             if not item:
                 messagebox.showerror(
                     "Item Unavailable",
                     "This item could not be found in the inventory.",
+                    parent=app,
+                )
+                return
+            if item.is_expired:
+                messagebox.showwarning(
+                    "Item Expired",
+                    f"'{item.item_name}' has expired and cannot be requested.",
                     parent=app,
                 )
                 return
@@ -1048,8 +1106,17 @@ class UserDashboard:
                     parent=app,
                 )
                 return
+            if item.is_expiring_soon():
+                exp_date = item.expiration_date
+                exp_str = exp_date.strftime("%Y-%m-%d") if hasattr(exp_date, "strftime") else str(exp_date)[:10]
+                if not messagebox.askyesno(
+                    "Expiring Soon",
+                    f"'{item.item_name}' is expiring soon on {exp_str}. Continue to request?",
+                    parent=app,
+                ):
+                    return
             ItemRequestModal(app, item)
-        except mysql.connector.Error as e:
+        except Exception as e:
             messagebox.showerror("Error", f"Could not load item details: {e}")
 
 class LogoutConfirmationModal:
@@ -1177,7 +1244,7 @@ class CancelConfirmationModal:
             dashboard.notifications = load_notifications()
             dashboard._load_items_cards()
             dashboard._load_notifications_list()
-        except (ValueError, mysql.connector.Error) as error:
+        except (ValueError, Exception) as error:
             messagebox.showerror("Request Error", str(error), parent=self.modal)
 
 
@@ -1245,7 +1312,7 @@ class ItemReturnModal:
         
         try:
             item = InventoryRepository().get_by_id(request["item_id"])
-        except mysql.connector.Error as error:
+        except Exception as error:
             messagebox.showerror("Item Unavailable", str(error), parent=self.modal)
             item = None
 
@@ -1328,7 +1395,7 @@ class ItemReturnModal:
             self.modal.destroy()
             dashboard.requests = load_my_requests()
             dashboard._load_items_cards()
-        except (ValueError, mysql.connector.Error) as error:
+        except (ValueError, Exception) as error:
             messagebox.showerror("Return Error", str(error), parent=self.modal)
 
 
@@ -1387,13 +1454,12 @@ class PasswordModal:
             repository.change_password(self.user_id, new)
             self.modal.destroy()
             messagebox.showinfo("Password Updated", "Your password was changed.", parent=app)
-        except (ValueError, mysql.connector.Error) as error:
+        except (ValueError, Exception) as error:
             messagebox.showerror("Password Error", str(error), parent=self.modal)
 
 
 class ViewDetailsModal:
     """Modal for viewing item details — compact two-column card layout."""
-    
     def __init__(self, parent, item):
         self.item = item
         self.modal = ctk.CTkToplevel(parent)
@@ -1459,11 +1525,13 @@ class ViewDetailsModal:
         fields_frame.grid_columnconfigure(0, weight=1)
         fields_frame.grid_columnconfigure(1, weight=2)
         
+        status_text = item.status_label
         detail_fields = [
             ("Item ID", item.item_id),
             ("Item Name", item.item_name),
             ("Item Code", item.item_code),
             ("Stock", item.stock),
+            ("Status", status_text),
             ("Added Date", item.added_date),
             ("Updated Date", item.updated_date),
         ]
@@ -1479,11 +1547,13 @@ class ViewDetailsModal:
         )
         field_row += 1
         
-        if item.expiration_date and (
-            item.category_name.strip().lower() in {"consumables", "consumable"}
-            or "perish" in item.category_name.lower()
-        ):
-            self._readonly_field(fields_frame, "Expiration Date", item.expiration_date,
+        if item.expiration_date:
+            exp_str = str(item.expiration_date)[:10]
+            if item.is_expired:
+                exp_str += " (Expired)"
+            elif item.is_expiring_soon():
+                exp_str += " (Expiring Soon)"
+            self._readonly_field(fields_frame, "Expiration Date", exp_str,
                                  row=field_row)
             field_row += 1
         
@@ -1531,7 +1601,6 @@ class ViewDetailsModal:
 
 class ItemRequestModal:
     """Modal for requesting an item — compact two-column card layout."""
-    
     def __init__(self, parent, item):
         self.item = item
         
@@ -1656,8 +1725,6 @@ class ItemRequestModal:
                 right,
                 width=18,
                 date_pattern="yyyy-mm-dd",
-                mindate=today,
-                maxdate=today + timedelta(days=90),
                 background=TEXT_BLUE,
                 foreground=WHITE,
                 borderwidth=1,
@@ -1695,7 +1762,8 @@ class ItemRequestModal:
             right, height=30, corner_radius=6,
             fg_color="#f3f4f6", text_color="black",
             button_color=WHITE,
-            values=unit_options if unit_options else ["Any"])
+            values=unit_options if unit_options else ["Any"],
+            state="readonly")
         self.unit_combo.pack(fill="x", pady=(0, 6))
         self.unit_combo.set(unit_options[0])
         
@@ -1720,7 +1788,6 @@ class ItemRequestModal:
         return proposed == "" or (proposed.isdigit() and len(proposed) <= 2)
     
     def _send_request(self):
-        """Validate and submit the item request."""
         qty_str = self.quantity_entry.get().strip()
         try:
             quantity = int(qty_str)
@@ -1735,7 +1802,7 @@ class ItemRequestModal:
 
         try:
             current_item = InventoryRepository().get_by_id(self.item.item_id)
-        except mysql.connector.Error as error:
+        except Exception as error:
             messagebox.showerror(
                 "Inventory Error",
                 f"Could not verify the current stock: {error}",
@@ -1749,6 +1816,22 @@ class ItemRequestModal:
                 parent=self.modal,
             )
             return
+        if current_item.is_expired:
+            messagebox.showwarning(
+                "Item Expired",
+                f"'{self.item.item_name}' has expired and cannot be requested.",
+                parent=self.modal,
+            )
+            return
+        if current_item.is_expiring_soon():
+            exp_date = current_item.expiration_date
+            exp_str = exp_date.strftime("%Y-%m-%d") if hasattr(exp_date, "strftime") else str(exp_date)[:10]
+            if not messagebox.askyesno(
+                "Expiring Soon",
+                f"'{self.item.item_name}' is expiring soon on {exp_str}. Continue to request?",
+                parent=self.modal,
+            ):
+                return
         if quantity > current_item.stock:
             messagebox.showwarning(
                 "Stock Unavailable",
@@ -1792,13 +1875,10 @@ class ItemRequestModal:
                     parent=self.modal,
                 )
                 return
-        
-        # Confirm request
         if not messagebox.askyesno("Confirm Request",
                                    f"Request {quantity} unit(s) of '{self.item.item_name}'?",
                                    parent=self.modal):
             return
-        
         try:
             RequestRepository().add_request(
                 self.item.item_id, current_user["user_id"], quantity, due_date
@@ -1811,7 +1891,7 @@ class ItemRequestModal:
             dashboard.requests = load_my_requests()
             dashboard._load_items_cards()
             
-        except (ValueError, mysql.connector.Error) as e:
+        except (ValueError, Exception) as e:
             messagebox.showerror("Error", f"Failed to submit request: {e}",
                                parent=self.modal)
 dashboard = UserDashboard()

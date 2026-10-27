@@ -79,6 +79,24 @@ class UserRepository(BaseRepository):
         cursor.close()
         return row
 
+    def get_by_email(self, email: str) -> Dict[str, Any] | None:
+        conn = self._db.get_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            """SELECT ua.user_id, ua.gmail, ua.password_hash, ua.role,
+                      ua.creationdate, ua.status,
+                      pi.personal_id, pi.student_id, pi.first_name,
+                      pi.middle_name, pi.last_name, pi.contact_number,
+                      pi.birthday, pi.gender, pi.address, pi.department, pi.course
+               FROM user_account ua
+               LEFT JOIN personal_info pi ON ua.user_id=pi.user_id
+               WHERE LOWER(TRIM(ua.gmail))=%s""",
+            (email.strip().lower(),),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        return row
+
     def get_user_history(self, user_id: int) -> List[Dict[str, Any]]:
         conn = self._db.get_connection()
         cursor = conn.cursor(dictionary=True)
@@ -503,6 +521,10 @@ class InventoryRepository(BaseRepository):
     def add(self, entity: InventoryItem) -> bool:
         if not entity.validate():
             raise ValueError("Invalid inventory item.")
+        if entity.serial_no:
+            s = str(entity.serial_no).strip()
+            if s and (len(s) > 8 or not s.isalnum()):
+                raise ValueError("Serial No. can only contain up to 8 letters or numbers.")
         if self.exists_duplicate(entity.item_name, entity.item_code, entity.serial_no):
             raise ValueError("Item name, item code, or serial number already exists.")
         conn = self._db.get_connection()
@@ -551,6 +573,10 @@ class InventoryRepository(BaseRepository):
     def update(self, entity: InventoryItem) -> bool:
         if not entity.validate():
             raise ValueError("Invalid inventory item.")
+        if entity.serial_no:
+            s = str(entity.serial_no).strip()
+            if s and (len(s) > 8 or not s.isalnum()):
+                raise ValueError("Serial No. can only contain up to 8 letters or numbers.")
         if self.exists_duplicate(entity.item_name, entity.item_code, entity.serial_no, entity.item_id):
             raise ValueError("Item name, item code, or serial number already exists.")
         conn = self._db.get_connection()
@@ -774,10 +800,12 @@ class RequestRepository(BaseRepository):
             request_id = entity.get("request_id")
             quantity = entity.get("quantity")
             status = entity.get("request_status")
+            due_date = entity.get("due_date")
         elif isinstance(entity, ItemRequest):
             request_id = entity.request_id
             quantity = entity.quantity
             status = entity.request_status
+            due_date = entity.due_date
         else:
             raise TypeError("Request updates require an ItemRequest or request details dictionary.")
 
@@ -795,9 +823,9 @@ class RequestRepository(BaseRepository):
         cursor = conn.cursor()
         cursor.execute(
             """UPDATE item_requests
-               SET quantity=%s, request_status=%s
+               SET quantity=%s, request_status=%s, due_date=%s
                WHERE request_id=%s""",
-            (quantity, status, request_id),
+            (quantity, status, due_date, request_id),
         )
         conn.commit()
         updated = cursor.rowcount > 0
@@ -1117,7 +1145,51 @@ class RequestRepository(BaseRepository):
             _log_action("UPDATE", "item_requests", _id)
         return approved
 
+    def cancel_expired_pending_requests(self) -> int:
+        conn = self._db.get_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute(
+                """SELECT ir.request_id, ir.requester_id, ir.item_id, ii.item_name, ii.expiration_date
+                   FROM item_requests ir
+                   JOIN inventory_items ii ON ii.item_id = ir.item_id
+                   WHERE ir.request_status = 'Pending'
+                     AND ii.expiration_date IS NOT NULL
+                     AND ii.expiration_date <= NOW()"""
+            )
+            expired_requests = cursor.fetchall()
+            cancelled_count = 0
+            for req in expired_requests:
+                req_id = req["request_id"]
+                user_id = req["requester_id"]
+                item_name = req["item_name"]
+                cursor.execute(
+                    "UPDATE item_requests SET request_status='Cancelled' WHERE request_id=%s",
+                    (req_id,),
+                )
+                msg = f"Your pending request for '{item_name}' (Request #{req_id}) was automatically cancelled because the item has expired."
+                cursor.execute(
+                    """INSERT INTO notifications
+                       (user_id, notif_message, notif_type, notif_isread, notif_create)
+                       VALUES (%s, %s, 'System', 0, NOW())""",
+                    (user_id, msg),
+                )
+                _log_action("UPDATE", "item_requests", req_id)
+                cancelled_count += 1
+            if cancelled_count > 0:
+                conn.commit()
+            return cancelled_count
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
+
     def get_all(self) -> List[Dict[str, Any]]:
+        try:
+            self.cancel_expired_pending_requests()
+        except Exception:
+            pass
         conn = self._db.get_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
@@ -1143,6 +1215,10 @@ class RequestRepository(BaseRepository):
         return rows
 
     def get_for_user(self, user_id: int) -> List[Dict[str, Any]]:
+        try:
+            self.cancel_expired_pending_requests()
+        except Exception:
+            pass
         conn = self._db.get_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
@@ -1229,7 +1305,7 @@ class RequestRepository(BaseRepository):
                    (item_id, requester_id, quantity, request_status, request_date, due_date)
                    VALUES (%s, %s, %s, 'Pending', NOW(), %s)""",
                 (item_id, requester_id, quantity, due_date),
-            )
+            ) 
             conn.commit()
             created = cursor.rowcount > 0
         except Exception:
@@ -1623,15 +1699,16 @@ class AnalyticsRepository:
     def get_summary_stats(self) -> Dict[str, int]:
         conn = self._db.get_connection()
         cursor = conn.cursor(dictionary=True)
-        # Note: Adjust 'Approved' to whatever status you use for active/borrowed items
         cursor.execute(
             """SELECT
                    (SELECT COALESCE(SUM(stock), 0) FROM inventory_items) AS total_stock,
                    (SELECT COUNT(*) FROM item_requests WHERE request_status='Pending') AS pending_requests,
                    (SELECT COUNT(*) FROM user_account WHERE status='Active') AS active_users,
-                   (SELECT COUNT(*) FROM item_requests WHERE request_status='Approved') AS active_requests,
+                   (SELECT COUNT(*) FROM item_requests WHERE request_status NOT IN ('Returned', 'Cancelled', 'Completed', 'Transaction Completed', 'Pending')) AS active_requests,
                    (SELECT COUNT(*) FROM inventory_items WHERE stock <= 0) AS out_of_stock_count,
-                   (SELECT COUNT(*) FROM item_requests WHERE request_status='Approved' AND due_date <= CURRENT_DATE) AS due_for_return_count"""
+                   (SELECT COUNT(*) FROM inventory_items WHERE expiration_date IS NOT NULL AND expiration_date <= CURRENT_TIMESTAMP()) AS expired_count,
+                   (SELECT COUNT(*) FROM item_requests WHERE request_status NOT IN ('Returned', 'Cancelled', 'Completed', 'Transaction Completed') AND due_date IS NOT NULL AND DATE(due_date) <= CURRENT_DATE()) AS due_for_return_count,
+                   (SELECT (SELECT COUNT(*) FROM transactions) + (SELECT COUNT(*) FROM transactions_archive)) AS total_transactions"""
         )
         row = cursor.fetchone() or {}
         cursor.close()
@@ -1641,16 +1718,37 @@ class AnalyticsRepository:
             "active_users": int(row.get("active_users", 0)),
             "active_requests": int(row.get("active_requests", 0)),
             "out_of_stock_count": int(row.get("out_of_stock_count", 0)),
-            "due_for_return_count": int(row.get("due_for_return_count", 0))
+            "expired_count": int(row.get("expired_count", 0)),
+            "due_for_return_count": int(row.get("due_for_return_count", 0)),
+            "total_transactions": int(row.get("total_transactions", 0))
         }
 
     def get_out_of_stock_items(self) -> List[Dict[str, Any]]:
         conn = self._db.get_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
-            """SELECT item_id, item_name, stock 
+            """SELECT item_id, item_name, stock, expiration_date, image_path 
                FROM inventory_items 
                WHERE stock <= 0 
+               ORDER BY item_name ASC"""
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        return rows
+
+    def get_out_of_stock_and_expired_items(self) -> List[Dict[str, Any]]:
+        conn = self._db.get_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            """SELECT item_id, item_name, stock, expiration_date, image_path,
+                      CASE
+                          WHEN stock <= 0 AND expiration_date IS NOT NULL AND expiration_date <= CURRENT_TIMESTAMP() THEN 'Out of Stock & Expired'
+                          WHEN expiration_date IS NOT NULL AND expiration_date <= CURRENT_TIMESTAMP() THEN 'Expired'
+                          ELSE 'Out of Stock'
+                      END AS status_reason
+               FROM inventory_items 
+               WHERE stock <= 0 
+                  OR (expiration_date IS NOT NULL AND expiration_date <= CURRENT_TIMESTAMP())
                ORDER BY item_name ASC"""
         )
         rows = cursor.fetchall()
@@ -1660,12 +1758,13 @@ class AnalyticsRepository:
     def get_due_items(self) -> List[Dict[str, Any]]:
         conn = self._db.get_connection()
         cursor = conn.cursor(dictionary=True)
-        # Assuming 'Approved' is the status for items currently checked out
         cursor.execute(
-            """SELECT ir.request_id, ii.item_name, ir.due_date
+            """SELECT ir.request_id, ii.item_id, ii.item_name, ir.due_date, ii.image_path
                FROM item_requests ir
                JOIN inventory_items ii ON ir.item_id = ii.item_id
-               WHERE ir.request_status = 'Approved' AND ir.due_date <= CURRENT_DATE
+               WHERE ir.request_status NOT IN ('Returned', 'Cancelled', 'Completed', 'Transaction Completed')
+                 AND ir.due_date IS NOT NULL
+                 AND DATE(ir.due_date) <= CURRENT_DATE()
                ORDER BY ir.due_date ASC"""
         )
         rows = cursor.fetchall()

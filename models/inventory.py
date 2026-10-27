@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import List, Dict, Any
 
 class Record(ABC):
@@ -94,12 +94,58 @@ class InventoryItem(Record):
     def requires_return(self) -> bool:
         return self.__requires_return
 
+    @property
+    def is_expired(self) -> bool:
+        if not self.__expiration_date:
+            return False
+        exp = self.__expiration_date
+        if isinstance(exp, str):
+            try:
+                exp = datetime.strptime(exp[:10], "%Y-%m-%d").date()
+            except Exception:
+                return False
+        elif isinstance(exp, datetime):
+            exp = exp.date()
+        elif not isinstance(exp, date):
+            return False
+        return exp <= date.today()
+
+    def is_expiring_soon(self, days: int = 7) -> bool:
+        if not self.__expiration_date:
+            return False
+        exp = self.__expiration_date
+        if isinstance(exp, str):
+            try:
+                exp = datetime.strptime(exp[:10], "%Y-%m-%d").date()
+            except Exception:
+                return False
+        elif isinstance(exp, datetime):
+            exp = exp.date()
+        elif not isinstance(exp, date):
+            return False
+        today = date.today()
+        return today < exp <= today + timedelta(days=days)
+
+    @property
+    def status_label(self) -> str:
+        if self.is_expired and self.__stock <= 0:
+            return "Out of Stock & Expired"
+        if self.is_expired:
+            return "Expired"
+        if self.__stock <= 0:
+            return "Out of Stock"
+        return "Available"
+
     def update_stock(self, qty: int):
         self.__stock += qty                    
 
     def validate(self) -> bool:
         if not self.__item_name.strip() or not self.__item_code.strip():
             return False
+        if self.__serial_no:
+            s = str(self.__serial_no).strip()
+            if s and (len(s) > 8 or not s.isalnum()):
+                return False
         return self.__stock >= 0 and self.__stock <= 500
 
     def to_dict(self) -> Dict[str, Any]:
@@ -107,6 +153,7 @@ class InventoryItem(Record):
             "item_id": self.__item_id, "category_id": self.__category_id,
             "item_name": self.__item_name, "item_code": self.__item_code,
             "description": self.__description, "stock": self.__stock,
+            "status": self.status_label,
             "serial_no": self.__serial_no, "expiration_date": self.__expiration_date,
             "updated_date": self.__updated_date, "added_date": self.__added_date,
             "unit": self.__unit, "image_path": self.__image_path,
