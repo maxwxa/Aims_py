@@ -213,7 +213,7 @@ class UserDashboard:
         items_header.pack(fill="x", padx=0, pady=(0, 0))
         items_header.pack_propagate(False)
         
-        ctk.CTkLabel(items_header, text="Items",
+        ctk.CTkLabel(items_header, text="Track Items",
                      font=("Arial", 16, "bold"), text_color=WHITE).pack(
                          side="left", padx=15, pady=10
                      )
