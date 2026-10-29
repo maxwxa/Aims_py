@@ -171,9 +171,9 @@ def authenticate_user():
                 Session.save(user['user_id'], user['gmail'], user['role'])
                 
                 dashboard_name = (
-                    "admin_dashboard.py"
+                    "admin_dashboard_main.py"
                     if user['role'].lower() == "admin"
-                    else "user_dashboard.py"
+                    else "user_dashboard_main.py"
                 )
                 dashboard_path = os.path.join(os.path.dirname(__file__), dashboard_name)
                 if not os.path.isfile(dashboard_path):
