@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Oct 27, 2026 at 10:03 PM
+-- Generation Time: Oct 30, 2026 at 11:40 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -156,8 +156,9 @@ CREATE TABLE `personal_info` (
 --
 
 INSERT INTO `personal_info` (`personal_id`, `user_id`, `student_id`, `first_name`, `middle_name`, `last_name`, `birthday`, `contact_number`, `department`, `course`, `gender`, `address`) VALUES
-(1, 1, 'AD198900013', 'Taylor Alisan', 'Swift', 'Kelce', '1989-12-13', '09198900013', 'College of Teacher Education', 'BSEd - Bachelor in Secondary Education', 'Male', 'Nashville'),
-(2, 2, 'SU202400769', 'John Carlo', 'Magtibay', 'Manalo', '2006-02-08', '09260682711', 'College of Computer Studies', 'BSCS - Bachelor of Science in Computer Science', 'Male', '2436 Main Street, Springfield, IL 62704');
+(5, 5, 'AD198900013', 'Taylor Alison', 'Swift', 'Kelce', '1989-12-13', '09198900013', 'College of Teacher Education', 'BSEd - Bachelor in Secondary Education', 'Male', 'Nashville'),
+(6, 6, 'SU202400769', 'John Carlo', 'Magtibay', 'Manalo', '2006-02-08', '09260682711', 'College of Computer Studies', 'BSCS - Bachelor of Science in Computer Science', 'Male', '2436 Main Street, Springfield, IL 62704'),
+(12, 12, 'CA202400001', 'Juan Cruz', 'Clove', 'Dela ', '2006-06-08', '09493212322', 'College of Criminology & Administration', 'BSC - Bachelor of Science in Criminology', 'Male', 'Cainta Rizal, Somewhere at Sta. Lucia 2134');
 
 -- --------------------------------------------------------
 
@@ -230,8 +231,9 @@ CREATE TABLE `user_account` (
 --
 
 INSERT INTO `user_account` (`user_id`, `gmail`, `password_hash`, `role`, `creationdate`, `status`) VALUES
-(1, 'taylor@gmail.com', 'pbkdf2_sha256$600000$17b3da4a900c266c4ae098aa310ecc82$c478f7c76096bf6cbaa19fda3148b443dec353b3ea5444ceec9816f93d537a63', 'Admin', '2026-10-20 15:00:29', 'Active'),
-(2, 'jcmanalo@gmail.com', 'pbkdf2_sha256$600000$9b40d5a7cf00bf6315b9981aa47f841f$e0cb9d531f120746a94dde5cbaeb536526152a452f9aaee3319a60c4101a4e6c', 'Student', '2026-10-25 22:19:15', 'Active');
+(5, 'admin@gmail.com', 'pbkdf2_sha256$600000$17b3da4a900c266c4ae098aa310ecc82$c478f7c76096bf6cbaa19fda3148b443dec353b3ea5444ceec9816f93d537a63', 'Admin', '2026-10-20 15:00:29', 'Active'),
+(6, 'jcmanalo@gmail.com', 'pbkdf2_sha256$600000$9b40d5a7cf00bf6315b9981aa47f841f$e0cb9d531f120746a94dde5cbaeb536526152a452f9aaee3319a60c4101a4e6c', 'Student', '2026-10-25 22:19:15', 'Active'),
+(12, 'test@gmail.com', 'pbkdf2_sha256$600000$04459b03ecb851b0dbeede914e3fd7d2$cb69ae5b5cc0eba8133019da64495befb6826ad0cce7bfe74af3951cb7500f64', 'Student', '2026-10-30 09:23:16', 'Active');
 
 --
 -- Indexes for dumped tables

@@ -5,7 +5,7 @@ from repositories import UserRepository
 MODAL_BG = "#0b1b42"
 MODAL_TITLE_FONT = ("Segoe UI", 22, "bold")
 MODAL_FONT = ("Segoe UI", 12)
-TEXT_BLUE = "#1e3a8a"
+TEXT_BLUE = "#ffffff"
 WHITE = "#ffffff"
 GREEN = "#84cc16"
 BLUE = "#1d4ed8"
