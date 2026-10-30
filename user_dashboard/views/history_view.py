@@ -12,7 +12,6 @@ MODAL_BG = "#0b1b42"
 MODAL_FONT = ("Segoe UI", 12)
 MODAL_TITLE_FONT = ("Segoe UI", 22, "bold")
 
-
 class HistoryView(ctk.CTkFrame):
     def __init__(self, parent, app=None):
         super().__init__(
@@ -20,6 +19,8 @@ class HistoryView(ctk.CTkFrame):
         )
         self.app = app or self.winfo_toplevel()
         self.rows = []
+        self.current_page = 1
+        self.items_per_page = 50
 
         self._build_view()
         self.fetch_and_render_rows()
@@ -105,6 +106,27 @@ class HistoryView(ctk.CTkFrame):
             command=self.fetch_and_render_rows,
         ).pack(side="left", padx=5)
 
+        self.pagination_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.pagination_frame.pack(fill="x", padx=20, pady=(0, 20))
+        
+        self.btn_prev = ctk.CTkButton(self.pagination_frame, text="<< Previous", width=100, fg_color=BLUE, command=self.prev_page)
+        self.btn_prev.pack(side="left")
+        
+        self.lbl_page = ctk.CTkLabel(self.pagination_frame, text="Page 1 of 1", font=("Arial", 14, "bold"), text_color=TEXT_BLUE)
+        self.lbl_page.pack(side="left", expand=True)
+        
+        self.btn_next = ctk.CTkButton(self.pagination_frame, text="Next >>", width=100, fg_color=BLUE, command=self.next_page)
+        self.btn_next.pack(side="right")
+
+    def prev_page(self):
+        if self.current_page > 1:
+            self.current_page -= 1
+            self.render_rows()
+
+    def next_page(self):
+        self.current_page += 1
+        self.render_rows()
+
     def fetch_and_render_rows(self, *_args):
         try:
             current_user = Session.load() or {}
@@ -125,7 +147,22 @@ class HistoryView(ctk.CTkFrame):
             or term in str(row.get("item_name", "")).lower()
             or term in str(row.get("transaction_type", "")).lower()
         ]
-        for row_index, row in enumerate(filtered_rows):
+
+        total_items = len(filtered_rows)
+        total_pages = max(1, (total_items + self.items_per_page - 1) // self.items_per_page)
+        
+        if self.current_page > total_pages:
+            self.current_page = 1
+            
+        self.lbl_page.configure(text=f"Page {self.current_page} of {total_pages} (Total: {total_items})")
+        self.btn_prev.configure(state="normal" if self.current_page > 1 else "disabled")
+        self.btn_next.configure(state="normal" if self.current_page < total_pages else "disabled")
+
+        start_idx = (self.current_page - 1) * self.items_per_page
+        end_idx = start_idx + self.items_per_page
+        display_rows = filtered_rows[start_idx:end_idx]
+
+        for row_index, row in enumerate(display_rows):
             card = ctk.CTkFrame(
                 self.rows_frame,
                 fg_color=WHITE,

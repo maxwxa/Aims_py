@@ -30,7 +30,8 @@ class InventoryView(ctk.CTkFrame):
         self.on_data_changed = on_data_changed
         self.inventory_repo = InventoryRepository()
         self.category_repo = CategoryRepository()
-
+        self.current_page = 1
+        self.items_per_page = 25
         self._build_view()
         self.load_categories_filter()
         self.load_inventory_grid()
@@ -96,12 +97,38 @@ class InventoryView(ctk.CTkFrame):
         self.catalogue_container = ctk.CTkScrollableFrame(
             catalogue_panel, fg_color=BG_BLUE, corner_radius=0
         )
+
+        self.pagination_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.pagination_frame.pack(fill="x", padx=20, pady=(0, 20))
+        
+        self.btn_prev = ctk.CTkButton(self.pagination_frame, text="<< Previous", width=100, 
+                                      fg_color=BLUE, command=self.prev_page)
+        self.btn_prev.pack(side="left")
+        
+        self.lbl_page = ctk.CTkLabel(self.pagination_frame, text="Page 1 of 1", font=("Arial", 14, "bold"), text_color=WHITE)
+        self.lbl_page.pack(side="left", expand=True)
+        
+        self.btn_next = ctk.CTkButton(self.pagination_frame, text="Next >>", width=100, 
+                                      fg_color=BLUE, command=self.next_page)
+        self.btn_next.pack(side="right")
+
         self.catalogue_container.pack(fill="both", expand=True, padx=15, pady=15)
         self.catalogue_container.grid_columnconfigure((0, 1, 2), weight=1)
+
+
 
     def refresh_inventory(self):
         self.load_categories_filter()
         self.load_inventory_grid()
+
+    def prev_page(self):
+        if self.current_page > 1:
+            self.current_page -= 1
+            self.load_inventory_grid()
+
+    def next_page(self):
+        self.current_page += 1
+        self.load_inventory_grid() 
 
     def refresh_dashboard(self):
         self.load_categories_filter()
@@ -138,8 +165,21 @@ class InventoryView(ctk.CTkFrame):
             messagebox.showerror("Inventory Unavailable", f"Could not load inventory data: {e}")
             return
 
+        total_items = len(items)
+        total_pages = max(1, (total_items + self.items_per_page - 1) // self.items_per_page)
+        
+        if self.current_page > total_pages:
+            self.current_page = 1
+            
+        self.lbl_page.configure(text=f"Page {self.current_page} of {total_pages} (Total: {total_items})")
+        self.btn_prev.configure(state="normal" if self.current_page > 1 else "disabled")
+        self.btn_next.configure(state="normal" if self.current_page < total_pages else "disabled")
 
-        for i, item in enumerate(items):
+        start_idx = (self.current_page - 1) * self.items_per_page
+        end_idx = start_idx + self.items_per_page
+        display_items = items[start_idx:end_idx]
+
+        for i, item in enumerate(display_items):
             row = i // 3
             col = i % 3
 

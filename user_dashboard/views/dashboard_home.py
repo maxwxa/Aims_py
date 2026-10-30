@@ -16,7 +16,6 @@ RED = "#ef4444"
 BLUE = "#1d4ed8"
 GREEN = "#84cc16"
 
-
 class DashboardHomeView(ctk.CTkFrame):
     def __init__(self, parent, app=None, on_data_changed=None):
         super().__init__(parent, fg_color=DARK_BLUE, corner_radius=8, border_width=1, border_color="#d1d5db")
@@ -24,6 +23,11 @@ class DashboardHomeView(ctk.CTkFrame):
         self.on_data_changed = on_data_changed
         self.requests = []
         self.notifications = []
+        
+        self.items_current_page = 1
+        self.items_per_page = 50
+        self.notif_current_page = 1
+        self.notif_per_page = 50
 
         self._build_view()
         self.refresh()
@@ -35,7 +39,6 @@ class DashboardHomeView(ctk.CTkFrame):
         inner_frame.grid_columnconfigure(1, weight=4)
         inner_frame.grid_rowconfigure(0, weight=1)
 
-        # Track Items Panel
         items_panel = ctk.CTkFrame(
             inner_frame, fg_color=WHITE, corner_radius=8, border_width=1, border_color="#d1d5db"
         )
@@ -71,13 +74,21 @@ class DashboardHomeView(ctk.CTkFrame):
             items_toolbar, width=130, height=30, corner_radius=6, fg_color=WHITE, text_color="black"
         )
         self.items_search.pack(side="left", padx=(0, 0))
-        self.items_search.bind("<KeyRelease>", lambda e: self.filter_items())
+        self.items_search.bind("<KeyRelease>", lambda _event=None: self.load_items_cards())
 
         self.items_scroll = ctk.CTkScrollableFrame(items_panel, fg_color=WHITE, corner_radius=0)
         self.items_scroll.pack(fill="both", expand=True, padx=15, pady=15)
         self.items_scroll.grid_columnconfigure((0, 1), weight=1)
 
-        # Notifications Panel
+        self.items_pagination_frame = ctk.CTkFrame(items_panel, fg_color="transparent")
+        self.items_pagination_frame.pack(fill="x", padx=15, pady=(0, 15))
+        self.btn_items_prev = ctk.CTkButton(self.items_pagination_frame, text="<< Previous", width=90, fg_color=BLUE, command=self.items_prev_page)
+        self.btn_items_prev.pack(side="left")
+        self.lbl_items_page = ctk.CTkLabel(self.items_pagination_frame, text="Page 1 of 1", font=("Arial", 12, "bold"), text_color=TEXT_BLUE)
+        self.lbl_items_page.pack(side="left", expand=True)
+        self.btn_items_next = ctk.CTkButton(self.items_pagination_frame, text="Next >>", width=90, fg_color=BLUE, command=self.items_next_page)
+        self.btn_items_next.pack(side="right")
+
         notif_panel = ctk.CTkFrame(
             inner_frame, fg_color=WHITE, corner_radius=8, border_width=1, border_color="#d1d5db"
         )
@@ -113,24 +124,49 @@ class DashboardHomeView(ctk.CTkFrame):
             notif_toolbar, width=130, height=30, corner_radius=6, fg_color=WHITE, text_color="black"
         )
         self.notif_search.pack(side="left", padx=(0, 0))
-        self.notif_search.bind("<KeyRelease>", lambda e: self.filter_notifications())
+        self.notif_search.bind("<KeyRelease>", lambda _event=None: self.load_notifications_list())
 
         self.notif_scroll = ctk.CTkScrollableFrame(notif_panel, fg_color=WHITE, corner_radius=0)
         self.notif_scroll.pack(fill="both", expand=True, padx=15, pady=15)
+
+        self.notif_pagination_frame = ctk.CTkFrame(notif_panel, fg_color="transparent")
+        self.notif_pagination_frame.pack(fill="x", padx=15, pady=(0, 15))
+        self.btn_notif_prev = ctk.CTkButton(self.notif_pagination_frame, text="<< Previous", width=90, fg_color=BLUE, command=self.notif_prev_page)
+        self.btn_notif_prev.pack(side="left")
+        self.lbl_notif_page = ctk.CTkLabel(self.notif_pagination_frame, text="Page 1 of 1", font=("Arial", 12, "bold"), text_color=TEXT_BLUE)
+        self.lbl_notif_page.pack(side="left", expand=True)
+        self.btn_notif_next = ctk.CTkButton(self.notif_pagination_frame, text="Next >>", width=90, fg_color=BLUE, command=self.notif_next_page)
+        self.btn_notif_next.pack(side="right")
+
+    def items_prev_page(self):
+        if self.items_current_page > 1:
+            self.items_current_page -= 1
+            self.load_items_cards()
+
+    def items_next_page(self):
+        self.items_current_page += 1
+        self.load_items_cards()
+
+    def notif_prev_page(self):
+        if self.notif_current_page > 1:
+            self.notif_current_page -= 1
+            self.load_notifications_list()
+
+    def notif_next_page(self):
+        self.notif_current_page += 1
+        self.load_notifications_list()
 
     def refresh(self):
         current_user = Session.load() or {}
         user_id = current_user.get("user_id", 1)
         try:
             self.requests = RequestRepository().get_for_user(user_id)
-        except Exception as e:
-            print(f"Error loading requests: {e}")
+        except Exception:
             self.requests = []
 
         try:
             self.notifications = RequestRepository().get_notifications(user_id)
-        except Exception as e:
-            print(f"Error loading notifications: {e}")
+        except Exception:
             self.notifications = []
 
         self.load_items_cards()
@@ -141,11 +177,30 @@ class DashboardHomeView(ctk.CTkFrame):
     def load_items_cards(self):
         for widget in self.items_scroll.winfo_children():
             widget.destroy()
-        visible_requests = [
+
+        search_term = self.items_search.get().lower()
+        
+        filtered = [
             req for req in self.requests
-            if req.get("request_status") not in {"Returned", "Cancelled"}
+            if (search_term in req["item_name"].lower() or search_term in req.get("item_code", "").lower())
+            and req.get("request_status") not in {"Returned", "Cancelled"}
         ]
-        for i, req in enumerate(visible_requests):
+
+        total_items = len(filtered)
+        total_pages = max(1, (total_items + self.items_per_page - 1) // self.items_per_page)
+
+        if self.items_current_page > total_pages:
+            self.items_current_page = 1
+
+        self.lbl_items_page.configure(text=f"Page {self.items_current_page} of {total_pages} (Total: {total_items})")
+        self.btn_items_prev.configure(state="normal" if self.items_current_page > 1 else "disabled")
+        self.btn_items_next.configure(state="normal" if self.items_current_page < total_pages else "disabled")
+
+        start_idx = (self.items_current_page - 1) * self.items_per_page
+        end_idx = start_idx + self.items_per_page
+        display_items = filtered[start_idx:end_idx]
+
+        for i, req in enumerate(display_items):
             row = i // 2
             col = i % 2
             card = self.create_request_card(self.items_scroll, req)
@@ -308,7 +363,28 @@ class DashboardHomeView(ctk.CTkFrame):
         for widget in self.notif_scroll.winfo_children():
             widget.destroy()
 
-        for notif in self.notifications:
+        search_term = self.notif_search.get().lower()
+
+        filtered = [
+            notif for notif in self.notifications
+            if search_term in notif["notif_message"].lower() or search_term in notif["notif_type"].lower()
+        ]
+
+        total_items = len(filtered)
+        total_pages = max(1, (total_items + self.notif_per_page - 1) // self.notif_per_page)
+
+        if self.notif_current_page > total_pages:
+            self.notif_current_page = 1
+
+        self.lbl_notif_page.configure(text=f"Page {self.notif_current_page} of {total_pages} (Total: {total_items})")
+        self.btn_notif_prev.configure(state="normal" if self.notif_current_page > 1 else "disabled")
+        self.btn_notif_next.configure(state="normal" if self.notif_current_page < total_pages else "disabled")
+
+        start_idx = (self.notif_current_page - 1) * self.notif_per_page
+        end_idx = start_idx + self.notif_per_page
+        display_notifs = filtered[start_idx:end_idx]
+
+        for notif in display_notifs:
             self.create_notification_row(self.notif_scroll, notif)
 
     def create_notification_row(self, parent, notification):
@@ -409,44 +485,6 @@ class DashboardHomeView(ctk.CTkFrame):
         mark_btn.pack(side="right")
 
         return card
-
-    def filter_items(self):
-        search_term = self.items_search.get().lower()
-
-        for widget in self.items_scroll.winfo_children():
-            widget.destroy()
-
-        filtered = [
-            req
-            for req in self.requests
-            if (
-                search_term in req["item_name"].lower()
-                or search_term in req.get("item_code", "").lower()
-            )
-            and req.get("request_status") not in {"Returned", "Cancelled"}
-        ]
-
-        for i, req in enumerate(filtered):
-            row = i // 2
-            col = i % 2
-            card = self.create_request_card(self.items_scroll, req)
-            card.grid(row=row, column=col, padx=8, pady=8, sticky="nsew")
-
-    def filter_notifications(self):
-        search_term = self.notif_search.get().lower()
-
-        for widget in self.notif_scroll.winfo_children():
-            widget.destroy()
-
-        filtered = [
-            notif
-            for notif in self.notifications
-            if search_term in notif["notif_message"].lower()
-            or search_term in notif["notif_type"].lower()
-        ]
-
-        for notif in filtered:
-            self.create_notification_row(self.notif_scroll, notif)
 
     def mark_notification_read(self, notification_id):
         current_user = Session.load() or {}

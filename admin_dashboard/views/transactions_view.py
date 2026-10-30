@@ -18,7 +18,8 @@ class TransactionsView(ctk.CTkFrame):
         self.app = app or self.winfo_toplevel()
         self.repository = TransactionRepository()
         self.state = {"mode": "current", "selected": None, "widgets": []}
-
+        self.current_page = 1
+        self.items_per_page = 50
         self._build_view()
         self.update_actions()
         self.load_rows()
@@ -149,6 +150,27 @@ class TransactionsView(ctk.CTkFrame):
             ),
         )
 
+        self.pagination_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.pagination_frame.pack(fill="x", padx=20, pady=(0, 20))
+        
+        self.btn_prev = ctk.CTkButton(self.pagination_frame, text="<< Previous", width=100, fg_color="#1d4ed8", command=self.prev_page)
+        self.btn_prev.pack(side="left")
+        
+        self.lbl_page = ctk.CTkLabel(self.pagination_frame, text="Page 1 of 1", font=("Arial", 14, "bold"), text_color="#1e3a8a")
+        self.lbl_page.pack(side="left", expand=True)
+        
+        self.btn_next = ctk.CTkButton(self.pagination_frame, text="Next >>", width=100, fg_color="#1d4ed8", command=self.next_page)
+        self.btn_next.pack(side="right")
+
+    def prev_page(self):
+        if self.current_page > 1:
+            self.current_page -= 1
+            self.load_rows()
+
+    def next_page(self):
+        self.current_page += 1
+        self.load_rows()
+
     def refresh(self):
         self.load_rows()
 
@@ -171,15 +193,35 @@ class TransactionsView(ctk.CTkFrame):
         except (ValueError, Exception) as error:
             messagebox.showerror("Transactions Unavailable", str(error), parent=self.app)
             return
+
         filter_value = self.filter_combo.get()
         term = self.search.get().strip().lower()
-        row_index = 1
+        
+        filtered_rows = []
         for row in rows:
             text = " ".join(str(value or "") for value in row.values()).lower()
             if filter_value != "All" and row.get("transaction_type") != filter_value:
                 continue
             if term and term not in text:
                 continue
+            filtered_rows.append(row)
+
+        total_items = len(filtered_rows)
+        total_pages = max(1, (total_items + self.items_per_page - 1) // self.items_per_page)
+        
+        if self.current_page > total_pages:
+            self.current_page = 1
+            
+        self.lbl_page.configure(text=f"Page {self.current_page} of {total_pages} (Total: {total_items})")
+        self.btn_prev.configure(state="normal" if self.current_page > 1 else "disabled")
+        self.btn_next.configure(state="normal" if self.current_page < total_pages else "disabled")
+
+        start_idx = (self.current_page - 1) * self.items_per_page
+        end_idx = start_idx + self.items_per_page
+        display_items = filtered_rows[start_idx:end_idx]
+
+        row_index = 1
+        for row in display_items:
             date_value = row.get("transaction_date")
             is_cancelled = (
                 str(row.get("transaction_type", "")).strip().lower() == "cancelled"

@@ -25,7 +25,8 @@ class InventoryView(ctk.CTkFrame):
         self.app = app or self.winfo_toplevel()
         self.inventory_repo = InventoryRepository()
         self.category_repo = CategoryRepository()
-
+        self.current_page = 1
+        self.items_per_page = 25
         self._build_view()
         self.load_categories_filter()
         self.load_inventory_cards()
@@ -84,6 +85,20 @@ class InventoryView(ctk.CTkFrame):
         self.cards = ctk.CTkScrollableFrame(self, fg_color=WHITE, corner_radius=8)
         self.cards.pack(fill="both", expand=True, padx=20, pady=20)
         self.cards.grid_columnconfigure((0, 1, 2), weight=1)
+
+        self.pagination_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.pagination_frame.pack(fill="x", padx=20, pady=(0, 20))
+        
+        self.btn_prev = ctk.CTkButton(self.pagination_frame, text="<< Previous", width=100, 
+                                      fg_color=BLUE, command=self.prev_page)
+        self.btn_prev.pack(side="left")
+        
+        self.lbl_page = ctk.CTkLabel(self.pagination_frame, text="Page 1 of 1", font=("Arial", 14, "bold"), text_color=TEXT_BLUE)
+        self.lbl_page.pack(side="left", expand=True)
+        
+        self.btn_next = ctk.CTkButton(self.pagination_frame, text="Next >>", width=100, 
+                                      fg_color=BLUE, command=self.next_page)
+        self.btn_next.pack(side="right")
 
         ctk.CTkButton(
             self,
@@ -407,6 +422,15 @@ class InventoryView(ctk.CTkFrame):
         ctk.CTkButton(
             actions, text="Proceed", height=36, command=proceed, fg_color=GREEN, corner_radius=8
         ).grid(row=0, column=1, sticky="ew", padx=(4, 0))
+    
+    def prev_page(self):
+        if self.current_page > 1:
+            self.current_page -= 1
+            self.load_inventory_cards()
+
+    def next_page(self):
+        self.current_page += 1
+        self.load_inventory_cards()    
 
     def item_form(self, item=None, category=None, manage=False):
         category = category or next(
@@ -846,7 +870,22 @@ class InventoryView(ctk.CTkFrame):
         except (ValueError, Exception) as error:
             messagebox.showerror("Inventory Unavailable", str(error))
             return
-        for index, item in enumerate(items):
+        total_items = len(items)
+        total_pages = max(1, (total_items + self.items_per_page - 1) // self.items_per_page)
+        
+
+        if self.current_page > total_pages:
+            self.current_page = 1
+            
+        self.lbl_page.configure(text=f"Page {self.current_page} of {total_pages} (Total: {total_items})")
+        self.btn_prev.configure(state="normal" if self.current_page > 1 else "disabled")
+        self.btn_next.configure(state="normal" if self.current_page < total_pages else "disabled")
+
+        start_idx = (self.current_page - 1) * self.items_per_page
+        end_idx = start_idx + self.items_per_page
+        display_items = items[start_idx:end_idx]
+    
+        for index, item in enumerate(display_items):
             card = ctk.CTkFrame(
                 self.cards, height=280, fg_color=WHITE, border_width=1, border_color="#d1d5db", corner_radius=8
             )
@@ -949,3 +988,5 @@ class InventoryView(ctk.CTkFrame):
 
 def create_inventory_tab_v2(parent_frame, app=None):
     return InventoryView(parent_frame, app=app)
+
+
