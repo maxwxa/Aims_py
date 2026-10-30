@@ -168,7 +168,9 @@ class ItemRequestModal:
                 font=MODAL_FONT,
             ).pack(anchor="w", pady=(4, 1))
             today = date.today()
-            min_due, max_due = borrow_due_date_bounds(today)
+            min_allowed = today + timedelta(days=7)
+            max_allowed = today + timedelta(days=90)
+            
             self.due_date_entry = DateEntry(
                 right,
                 width=18,
@@ -176,28 +178,23 @@ class ItemRequestModal:
                 background=TEXT_BLUE,
                 foreground=WHITE,
                 borderwidth=1,
-                mindate=min_due,
-                maxdate=max_due,
+                mindate=min_allowed,
+                maxdate=max_allowed,
             )
             self.due_date_entry.pack(fill="x", pady=(0, 6))
-            default_due = today + timedelta(days=30)
-            if default_due < min_due:
-                default_due = min_due
-            if default_due > max_due:
-                default_due = max_due
-            self.due_date_entry.set_date(default_due)
+            self.due_date_entry.set_date(min_allowed)
 
-            def release_modal_grab(_event=None):
-                if self.modal.grab_current() == str(self.modal):
+            def on_cal_open(e):
+                if e.widget == self.due_date_entry._top_cal:
                     self.modal.grab_release()
 
-            def restore_modal_grab(_event=None):
-                if self.modal.winfo_exists():
+            def on_cal_close(e):
+                if e.widget == self.due_date_entry._top_cal and self.modal.winfo_exists():
                     self.modal.grab_set()
                     self.modal.focus_set()
 
-            self.due_date_entry.bind("<Button-1>", release_modal_grab, add="+")
-            self.due_date_entry.bind("<<DateEntrySelected>>", restore_modal_grab, add="+")
+            self.due_date_entry._top_cal.bind("<Map>", on_cal_open, add="+")
+            self.due_date_entry._top_cal.bind("<Unmap>", on_cal_close, add="+")
 
         ctk.CTkLabel(
             right, text="Unit/Serial No.", text_color=TEXT_BLUE, font=MODAL_FONT
