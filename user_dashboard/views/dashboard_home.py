@@ -346,6 +346,8 @@ class DashboardHomeView(ctk.CTkFrame):
         date_label.pack(side="left")
 
         notif_type = notification.get("notif_type", "")
+        if str(notif_type).strip().lower() == "overdue":
+            notif_type = "System"
         type_prefix = "From: " if notif_type == "Admin" else "Type: "
         type_label = ctk.CTkLabel(
             header,
@@ -359,22 +361,22 @@ class DashboardHomeView(ctk.CTkFrame):
         msg_frame = ctk.CTkFrame(card, fg_color="transparent")
         msg_frame.pack(fill="x", expand=True, padx=12, pady=4)
 
-        msg_label = ctk.CTkLabel(
+        message = str(notification.get("notif_message", "")).strip()
+        line_guess = max(2, message.count("\n") + 1, (len(message) // 42) + 1)
+        msg_height = min(140, max(64, line_guess * 22))
+        msg_box = ctk.CTkTextbox(
             msg_frame,
-            text=str(notification.get("notif_message", "")),
+            height=msg_height,
+            fg_color="transparent",
             text_color="black" if is_unread else "#374151",
             font=("Arial", 11),
-            anchor="w",
-            justify="left",
-            wraplength=300,
+            wrap="word",
+            activate_scrollbars=True,
+            border_width=0,
         )
-        msg_label.pack(fill="x", expand=True, anchor="w")
-
-        def _update_wrap(event):
-            new_wrap = max(80, event.width - 10)
-            msg_label.configure(wraplength=new_wrap)
-
-        msg_frame.bind("<Configure>", _update_wrap)
+        msg_box.pack(fill="x", expand=True)
+        msg_box.insert("1.0", message)
+        msg_box.configure(state="disabled")
 
         footer = ctk.CTkFrame(card, fg_color="transparent")
         footer.pack(fill="x", padx=12, pady=(4, 10))

@@ -50,7 +50,7 @@ class ProfileView(ctk.CTkFrame):
             ("Account No.", profile.get("user_id", current_user.get("user_id", ""))),
             ("Account Role", profile.get("role", current_user.get("role", ""))),
             ("Email", profile.get("gmail", current_user.get("gmail", ""))),
-            ("Account Status", "Active"),
+            ("Account Status", profile.get("status", "Active")),
             ("Account Created Date", profile.get("creationdate", "")),
         ]
         for label, value in fields:

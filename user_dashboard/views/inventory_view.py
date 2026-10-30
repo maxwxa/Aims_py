@@ -3,7 +3,12 @@ from tkinter import messagebox
 import customtkinter as ctk
 from PIL import Image
 from models.users import Session
-from repositories import InventoryRepository, CategoryRepository, RequestRepository
+from repositories import (
+    ACCOUNT_DISABLED_MESSAGE,
+    InventoryRepository,
+    CategoryRepository,
+    RequestRepository,
+)
 from user_dashboard.components.details_modal import ViewDetailsModal
 from user_dashboard.components.request_modal import ItemRequestModal
 
@@ -66,8 +71,6 @@ class InventoryView(ctk.CTkFrame):
         )
         self.items_filter.pack(side="left", padx=(0, 12))
         self.items_filter.set("All Categories")
-        self.items_filter.bind("<<ComboboxSelected>>", lambda e: self.load_inventory_grid())
-
         self.items_cat_search_label = ctk.CTkLabel(
             controls_frame, text="Search:", font=("Arial", 12, "bold"), text_color=WHITE
         )
@@ -109,34 +112,32 @@ class InventoryView(ctk.CTkFrame):
     def load_categories_filter(self):
         try:
             categories = self.category_repo.get_all()
-            values = ["All Categories", "Available", "Out of Stock", "Expired"] + [
-                cat.category_name for cat in categories
-            ]
+            
+            values = ["All Categories"] + [cat.category_name for cat in categories]
+            
             self.items_filter.configure(values=values)
+            
         except Exception as e:
             print(f"Error loading categories: {e}")
 
     def load_inventory_grid(self):
         for widget in self.catalogue_container.winfo_children():
             widget.destroy()
-
         search_term = self.items_cat_search.get()
         filter_category = self.items_filter.get()
 
         try:
             items = self.inventory_repo.get_all(search_term=search_term)
 
-            if filter_category == "Available":
-                items = [item for item in items if item.stock > 0 and not item.is_expired]
-            elif filter_category == "Out of Stock":
-                items = [item for item in items if item.stock <= 0]
-            elif filter_category == "Expired":
-                items = [item for item in items if item.is_expired]
-            elif filter_category and filter_category != "All Categories":
+            items = [item for item in items if not item.is_expired]
+
+            if filter_category and filter_category != "All Categories":
                 items = [item for item in items if item.category_name == filter_category]
+                
         except Exception as e:
             messagebox.showerror("Inventory Unavailable", f"Could not load inventory data: {e}")
             return
+
 
         for i, item in enumerate(items):
             row = i // 3
@@ -292,8 +293,28 @@ class InventoryView(ctk.CTkFrame):
                 )
                 return
             current_user = Session.load() or {}
-            if RequestRepository().has_active_request(
-                current_user.get("user_id", 1), item_id
+            user_id = current_user.get("user_id", 1)
+            request_repo = RequestRepository()
+            try:
+                request_repo.process_overdue_returns()
+            except Exception:
+                pass
+            if request_repo.is_account_disabled(user_id):
+                messagebox.showwarning(
+                    "Account Disabled",
+                    ACCOUNT_DISABLED_MESSAGE,
+                    parent=self.app,
+                )
+                return
+            if request_repo.has_overdue_unreturned_items(user_id):
+                messagebox.showwarning(
+                    "Overdue Item",
+                    "You have an overdue item to return. Return it before requesting again.",
+                    parent=self.app,
+                )
+                return
+            if request_repo.has_active_request(
+                user_id, item_id
             ):
                 messagebox.showwarning(
                     "Active Request",

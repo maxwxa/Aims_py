@@ -1,3 +1,4 @@
+import calendar
 from abc import ABC, abstractmethod
 from datetime import date, datetime, timedelta
 from typing import List, Dict, Any
@@ -6,6 +7,40 @@ from models.users import UserAccount, Session
 from models.password_utils import hash_password, verify_password
 from models.account_validation import validate_email, validate_new_account, validate_password
 from models.inventory import InventoryItem, ItemRequest, Transaction, Category
+
+MIN_BORROW_DAYS = 7
+MAX_BORROW_MONTHS = 3
+OVERDUE_ACCOUNT_STATUS = "Disabled"
+ACCOUNT_DISABLED_MESSAGE = (
+    "Your account is disabled because you have an overdue item to return. "
+    "Return the overdue item first before you can request items again."
+)
+
+
+def add_calendar_months(start: date, months: int) -> date:
+    month_index = start.month - 1 + months
+    year = start.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(start.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def borrow_due_date_bounds(today: date | None = None) -> tuple[date, date]:
+    today = today or date.today()
+    return today + timedelta(days=MIN_BORROW_DAYS), add_calendar_months(today, MAX_BORROW_MONTHS)
+
+
+def validate_borrow_due_date(due_date, today: date | None = None) -> date:
+    if isinstance(due_date, datetime):
+        due_date = due_date.date()
+    if not isinstance(due_date, date):
+        raise ValueError("Due date must be a valid calendar date.")
+    min_due, max_due = borrow_due_date_bounds(today)
+    if due_date < min_due or due_date > max_due:
+        raise ValueError(
+            "Due date must be at least 7 days from today and no more than 3 months."
+        )
+    return due_date
 
 class BaseRepository(ABC):
     def __init__(self):
@@ -993,6 +1028,18 @@ class RequestRepository(BaseRepository):
             if not notes.strip():
                 raise ValueError("Condition notes are required.")
             cursor.execute(
+                """SELECT requester_id
+                   FROM item_requests
+                   WHERE request_id=%s AND item_id=%s AND quantity=%s
+                     AND request_status IN ('Active', 'Return Requested')""",
+                (request_id, item_id, quantity),
+            )
+            existing = cursor.fetchone()
+            if not existing:
+                conn.rollback()
+                return False
+            requester_id = existing[0]
+            cursor.execute(
                 """UPDATE item_requests
                    SET request_status='Returned', processed_by=%s
                    WHERE request_id=%s AND item_id=%s AND quantity=%s
@@ -1011,6 +1058,7 @@ class RequestRepository(BaseRepository):
             )
             if not InventoryRepository().adjust_stock(item_id, quantity, conn):
                 raise ValueError("Item does not exist.")
+            self._reactivate_if_no_overdue(cursor, requester_id)
             conn.commit()
             _log_action("UPDATE", "item_requests/transactions/inventory_items", request_id)
             return True
@@ -1049,6 +1097,8 @@ class RequestRepository(BaseRepository):
 
             if request.get("request_status") == "Active":
                 InventoryRepository().adjust_stock(request["item_id"], request["quantity"], conn)
+            if request.get("request_status") in {"Active", "Return Requested"}:
+                self._reactivate_if_no_overdue(cursor, request["requester_id"])
 
             cancellation_reason = reason.strip() if reason and reason.strip() else "Cancelled"
             cursor.execute(
@@ -1185,9 +1235,143 @@ class RequestRepository(BaseRepository):
         finally:
             cursor.close()
 
+    def has_overdue_unreturned_items(self, user_id: int) -> bool:
+        conn = self._db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT 1
+               FROM item_requests
+               WHERE requester_id=%s
+                 AND request_status IN ('Active', 'Return Requested')
+                 AND due_date IS NOT NULL
+                 AND DATE(due_date) <= CURRENT_DATE()
+               LIMIT 1""",
+            (user_id,),
+        )
+        found = cursor.fetchone() is not None
+        cursor.close()
+        return found
+
+    def is_account_disabled(self, user_id: int) -> bool:
+        conn = self._db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT status FROM user_account WHERE user_id=%s",
+            (user_id,),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        return bool(row and str(row[0] or "").strip().lower() == OVERDUE_ACCOUNT_STATUS.lower())
+
+    def _reactivate_if_no_overdue(self, cursor, user_id: int) -> None:
+        if not user_id:
+            return
+        cursor.execute(
+            """SELECT 1
+               FROM item_requests
+               WHERE requester_id=%s
+                 AND request_status IN ('Active', 'Return Requested')
+                 AND due_date IS NOT NULL
+                 AND DATE(due_date) <= CURRENT_DATE()
+               LIMIT 1""",
+            (user_id,),
+        )
+        if cursor.fetchone() is None:
+            cursor.execute(
+                """UPDATE user_account
+                   SET status='Active'
+                   WHERE user_id=%s AND status=%s""",
+                (user_id, OVERDUE_ACCOUNT_STATUS),
+            )
+
+    def process_overdue_returns(self) -> int:
+        """Notify borrowers of due items, disable their accounts, and block new requests."""
+        conn = self._db.get_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute(
+                """SELECT ir.request_id, ir.requester_id, ir.due_date, ii.item_name
+                   FROM item_requests ir
+                   JOIN inventory_items ii ON ii.item_id=ir.item_id
+                   WHERE ir.request_status IN ('Active', 'Return Requested')
+                     AND ir.due_date IS NOT NULL
+                     AND DATE(ir.due_date) <= CURRENT_DATE()"""
+            )
+            overdue_requests = cursor.fetchall()
+            processed = 0
+            admin_ids = None
+            for req in overdue_requests:
+                request_id = req["request_id"]
+                user_id = req["requester_id"]
+                item_name = req["item_name"]
+                due_value = req["due_date"]
+                due_text = (
+                    due_value.strftime("%Y-%m-%d")
+                    if hasattr(due_value, "strftime")
+                    else str(due_value)[:10]
+                )
+                marker = f"[Request {request_id}]"
+                cursor.execute(
+                    """UPDATE user_account
+                       SET status=%s
+                       WHERE user_id=%s AND status NOT IN ('Archived', %s)""",
+                    (OVERDUE_ACCOUNT_STATUS, user_id, OVERDUE_ACCOUNT_STATUS),
+                )
+                cursor.execute(
+                    """SELECT 1 FROM notifications
+                       WHERE user_id=%s AND notif_message LIKE %s
+                       LIMIT 1""",
+                    (user_id, f"%{marker}%"),
+                )
+                if cursor.fetchone() is None:
+                    cursor.execute(
+                        """INSERT INTO notifications
+                           (user_id, notif_message, notif_type, notif_isread, notif_create)
+                           VALUES (%s, %s, 'System', 0, NOW())""",
+                        (
+                            user_id,
+                            f"{marker} '{item_name}' is due for return (due {due_text}). "
+                            "Your account is disabled until you return this item.",
+                        ),
+                    )
+                if admin_ids is None:
+                    cursor.execute(
+                        """SELECT user_id FROM user_account
+                           WHERE LOWER(role)='admin' AND status='Active'"""
+                    )
+                    admin_ids = [row["user_id"] for row in cursor.fetchall()]
+                for admin_id in admin_ids:
+                    cursor.execute(
+                        """SELECT 1 FROM notifications
+                           WHERE user_id=%s AND notif_message LIKE %s
+                           LIMIT 1""",
+                        (admin_id, f"%{marker}%"),
+                    )
+                    if cursor.fetchone() is None:
+                        cursor.execute(
+                            """INSERT INTO notifications
+                               (user_id, notif_message, notif_type, notif_isread, notif_create)
+                               VALUES (%s, %s, 'System', 0, NOW())""",
+                            (
+                                admin_id,
+                                f"{marker} A borrower has an overdue item '{item_name}'. "
+                                "Their account is disabled until the item is returned.",
+                            ),
+                        )
+                processed += 1
+            if processed:
+                conn.commit()
+            return processed
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
+
     def get_all(self) -> List[Dict[str, Any]]:
         try:
             self.cancel_expired_pending_requests()
+            self.process_overdue_returns()
         except Exception:
             pass
         conn = self._db.get_connection()
@@ -1217,6 +1401,7 @@ class RequestRepository(BaseRepository):
     def get_for_user(self, user_id: int) -> List[Dict[str, Any]]:
         try:
             self.cancel_expired_pending_requests()
+            self.process_overdue_returns()
         except Exception:
             pass
         conn = self._db.get_connection()
@@ -1275,9 +1460,34 @@ class RequestRepository(BaseRepository):
     def add_request(
         self, item_id: int, requester_id: int, quantity: int, due_date=None
     ) -> bool:
+        try:
+            self.process_overdue_returns()
+        except Exception:
+            pass
         conn = self._db.get_connection()
         cursor = conn.cursor(dictionary=True)
         try:
+            cursor.execute(
+                "SELECT status FROM user_account WHERE user_id=%s",
+                (requester_id,),
+            )
+            account = cursor.fetchone()
+            if account and str(account.get("status") or "").strip().lower() == OVERDUE_ACCOUNT_STATUS.lower():
+                raise ValueError(ACCOUNT_DISABLED_MESSAGE)
+            cursor.execute(
+                """SELECT 1
+                   FROM item_requests
+                   WHERE requester_id=%s
+                     AND request_status IN ('Active', 'Return Requested')
+                     AND due_date IS NOT NULL
+                     AND DATE(due_date) <= CURRENT_DATE()
+                   LIMIT 1""",
+                (requester_id,),
+            )
+            if cursor.fetchone():
+                raise ValueError(
+                    "You have an overdue item to return. Return it before requesting again."
+                )
             cursor.execute(
                 """SELECT c.requires_return
                    FROM inventory_items ii
@@ -1291,13 +1501,7 @@ class RequestRepository(BaseRepository):
             if item["requires_return"]:
                 if due_date is None:
                     raise ValueError("A due date is required for returnable items.")
-                if isinstance(due_date, datetime):
-                    due_date = due_date.date()
-                if not isinstance(due_date, date):
-                    raise ValueError("Due date must be a valid calendar date.")
-                today = date.today()
-                if due_date < today or due_date > today + timedelta(days=90):
-                    raise ValueError("Items can only be borrowed for up to 3 months.")
+                due_date = validate_borrow_due_date(due_date)
             else:
                 due_date = None
             cursor.execute(
@@ -1695,6 +1899,9 @@ class AnalyticsRepository:
         rows = cursor.fetchall()
         cursor.close()
         return rows
+
+
+    
 
     def get_summary_stats(self) -> Dict[str, int]:
         conn = self._db.get_connection()

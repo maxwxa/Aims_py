@@ -149,7 +149,7 @@ class AccountEditor:
         )
         left_row += 1
         self.status = self._combo(
-            left_form, "Status", ["Active", "Inactive"],
+            left_form, "Status", ["Active", "Inactive", "Disabled"],
             details.get("status", (account or {}).get("account_status", "Active")),
             left_row,
         )

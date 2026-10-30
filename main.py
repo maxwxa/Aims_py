@@ -6,7 +6,7 @@ import customtkinter as ctk
 from PIL import Image, ImageTk
 from models.password_utils import verify_password
 from models.users import Session
-from repositories import UserRepository
+from repositories import RequestRepository, UserRepository
 
 ctk.set_appearance_mode("light")
 
@@ -168,6 +168,10 @@ def authenticate_user():
         
         if user:
             if verify_password(password, user['password_hash']):
+                try:
+                    RequestRepository().process_overdue_returns()
+                except Exception:
+                    pass
                 Session.save(user['user_id'], user['gmail'], user['role'])
                 
                 dashboard_name = (

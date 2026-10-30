@@ -5,7 +5,7 @@ from tkinter import messagebox, ttk
 import customtkinter as ctk
 from PIL import Image, ImageTk
 from models.users import Session
-from repositories import UserRepository
+from repositories import RequestRepository, UserRepository
 from admin_dashboard.sidebar import Sidebar
 from admin_dashboard.views.dashboard_home import DashboardHomeView
 from admin_dashboard.views.inventory_view import InventoryView
@@ -68,6 +68,10 @@ class AdminDashboardApp:
             self.app.destroy()
             subprocess.Popen([sys.executable, os.path.join(root_dir, "main.py")])
             sys.exit()
+        try:
+            RequestRepository().process_overdue_returns()
+        except Exception:
+            pass
 
     def _load_user_info(self):
         try:

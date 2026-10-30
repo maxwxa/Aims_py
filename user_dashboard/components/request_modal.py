@@ -5,7 +5,12 @@ import customtkinter as ctk
 from PIL import Image
 from tkcalendar import DateEntry
 from models.users import Session
-from repositories import RequestRepository, InventoryRepository
+from repositories import (
+    RequestRepository,
+    InventoryRepository,
+    borrow_due_date_bounds,
+    validate_borrow_due_date,
+)
 from user_dashboard.components.details_modal import ViewDetailsModal
 
 DARK_BLUE = "#1c3b7a"
@@ -163,6 +168,7 @@ class ItemRequestModal:
                 font=MODAL_FONT,
             ).pack(anchor="w", pady=(4, 1))
             today = date.today()
+            min_due, max_due = borrow_due_date_bounds(today)
             self.due_date_entry = DateEntry(
                 right,
                 width=18,
@@ -170,9 +176,16 @@ class ItemRequestModal:
                 background=TEXT_BLUE,
                 foreground=WHITE,
                 borderwidth=1,
+                mindate=min_due,
+                maxdate=max_due,
             )
             self.due_date_entry.pack(fill="x", pady=(0, 6))
-            self.due_date_entry.set_date(today + timedelta(days=30))
+            default_due = today + timedelta(days=30)
+            if default_due < min_due:
+                default_due = min_due
+            if default_due > max_due:
+                default_due = max_due
+            self.due_date_entry.set_date(default_due)
 
             def release_modal_grab(_event=None):
                 if self.modal.grab_current() == str(self.modal):
@@ -308,14 +321,10 @@ class ItemRequestModal:
         unit = self.unit_combo.get().strip().lower()
         due_date = None
         if self.item.requires_return:
-            due_date = self.due_date_entry.get_date()
-            today = date.today()
-            if due_date < today or due_date > today + timedelta(days=90):
-                messagebox.showwarning(
-                    "Invalid Due Date",
-                    "Items can only be borrowed for up to 3 months.",
-                    parent=self.modal,
-                )
+            try:
+                due_date = validate_borrow_due_date(self.due_date_entry.get_date())
+            except ValueError as error:
+                messagebox.showwarning("Invalid Due Date", str(error), parent=self.modal)
                 return
         if category in {"assets", "asset"}:
             if quantity != 1:
